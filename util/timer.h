@@ -12,7 +12,7 @@
 #include "hyperleveldb/env.h"
 #include "util/logging.h"
 
-#define TIMER_LOG
+//#define TIMER_LOG
 
 namespace leveldb {
 
