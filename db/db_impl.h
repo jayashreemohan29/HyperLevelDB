@@ -23,6 +23,7 @@
 #include "hyperleveldb/env.h"
 #include "port/port.h"
 #include "port/thread_annotations.h"
+#include "util/timer.h"
 
 namespace leveldb {
 #ifdef _LIBCPP_VERSION
@@ -49,6 +50,7 @@ class DBImpl : public DB {
   virtual Status Get(const ReadOptions& options,
                      const Slice& key,
                      std::string* value);
+  virtual Status GetCurrentVersionState(std::string* value);
   virtual Iterator* NewIterator(const ReadOptions&);
   virtual void GetReplayTimestamp(std::string* timestamp);
   virtual void AllowGarbageCollectBeforeTimestamp(const std::string& timestamp);
@@ -63,6 +65,8 @@ class DBImpl : public DB {
   virtual void GetApproximateSizes(const Range* range, int n, uint64_t* sizes);
   virtual void CompactRange(const Slice* begin, const Slice* end);
   virtual Status LiveBackup(const Slice& name);
+  virtual void PrintTimerAudit();
+  virtual void ClearTimer();
 
   // Extra methods (for testing) that are not in the public DB interface
 
@@ -229,6 +233,8 @@ class DBImpl : public DB {
   uint64_t straight_reads_;
 
   VersionSet* versions_;
+
+  Timer* timer;
 
   // Information for ongoing backup processes
   port::CondVar backup_cv_;

@@ -18,6 +18,16 @@
 #include "util/random.h"
 #include "util/testutil.h"
 
+//#define TIMER_LOG
+
+#ifdef TIMER_LOG
+	#define micros(a) a = Env::Default()->NowMicros()
+	#define print_timer_info(a, b, c)   printf("%s: %lu micros (%f ms)\n", a, abs(b - c), abs(b - c)/1000.0);
+#else
+	#define micros(a)
+	#define print_timer_info(a, b, c)
+#endif
+
 // Comma-separated list of operations to run in the specified order
 //   Actual benchmarks:
 //      fillseq       -- write N values in sequential key order in async mode
@@ -40,8 +50,8 @@
 //      stats       -- Print DB stats
 //      sstables    -- Print sstable info
 //      heapprofile -- Dump a heap profile (if supported by this port)
-static const char* FLAGS_benchmarks =
-    "fillseq,"
+static const char* FLAGS_benchmarks = "fillrandom,readrandom"
+/*    "fillseq,"
     "fillsync,"
     "fillrandom,"
     "overwrite,"
@@ -58,10 +68,10 @@ static const char* FLAGS_benchmarks =
     "snappycomp,"
     "snappyuncomp,"
     "acquireload,"
-    ;
+  */  ;
 
 // Number of key/values to place in database
-static int FLAGS_num = 1000000;
+static int FLAGS_num = 10000000;
 
 // Number of read operations to do.  If negative, do FLAGS_num reads.
 static int FLAGS_reads = -1;
@@ -92,7 +102,7 @@ static int FLAGS_open_files = 0;
 
 // Bloom filter bits per key.
 // Negative means use default settings.
-static int FLAGS_bloom_bits = -1;
+static int FLAGS_bloom_bits = 10;
 
 // If true, do not destroy the existing database.  If you set this
 // flag and also specify a benchmark that wants a fresh database, that
@@ -441,6 +451,22 @@ class Benchmark {
     delete filter_policy_;
   }
 
+  void TryReopen() {
+	if (db_ != NULL) {
+		delete db_;
+	}
+    db_ = NULL;
+    Open(); //DB::Open(opts, dbname_, &db_);
+  }
+
+  void print_current_db_contents() {
+	  std::string current_db_state;
+	  printf("----------------------Current DB state-----------------------\n");
+	  db_->GetCurrentVersionState(&current_db_state);
+	  printf("%s\n", current_db_state.c_str());
+	  printf("-------------------------------------------------------------\n");
+  }
+
   void Run() {
     PrintHeader();
     Open();
@@ -469,7 +495,7 @@ class Benchmark {
       int num_threads = FLAGS_threads;
 
       if (name == Slice("fillseq")) {
-        fresh_db = true;
+//        fresh_db = true;
         method = &Benchmark::WriteSeq;
       } else if (name == Slice("fillbatch")) {
         fresh_db = true;
@@ -552,6 +578,7 @@ class Benchmark {
         RunBenchmark(num_threads, name, method);
       }
     }
+    db_->PrintTimerAudit();
   }
 
  private:
@@ -737,6 +764,7 @@ class Benchmark {
   }
 
   void DoWrite(ThreadState* thread, bool seq) {
+	uint64_t before, after, before_g, after_g;
     if (num_ != FLAGS_num) {
       char msg[100];
       snprintf(msg, sizeof(msg), "(%d ops)", num_);
@@ -747,6 +775,8 @@ class Benchmark {
     WriteBatch batch;
     Status s;
     int64_t bytes = 0;
+
+    micros(before_g);
     for (int i = 0; i < num_; i += entries_per_batch_) {
       batch.Clear();
       for (int j = 0; j < entries_per_batch_; j++) {
@@ -764,6 +794,19 @@ class Benchmark {
       }
     }
     thread->stats.AddBytes(bytes);
+    micros(after_g);
+    print_timer_info("DoWrite() method :: Total time", before_g, after_g);
+
+    printf("Reopening database . . \n");
+    TryReopen();
+    printf("Sleeping for 10 seconds for the background compactions to complete. \n");
+    Env::Default()->SleepForMicroseconds(10000000);
+
+//    db_->PrintTimerAudit();
+//    printf("============================================================================\n");
+//    printf("Sleeping for 2 seconds . . .\n");
+//    Env::Default()->SleepForMicroseconds(2000000);
+//    db_->ClearTimer();
   }
 
   void ReadSequential(ThreadState* thread) {
@@ -793,9 +836,11 @@ class Benchmark {
   }
 
   void ReadRandom(ThreadState* thread) {
+	uint64_t a, b, start, end;
     ReadOptions options;
     std::string value;
     int found = 0;
+    micros(start);
     for (int i = 0; i < reads_; i++) {
       char key[100];
       const int k = thread->rand.Next() % FLAGS_num;
@@ -807,6 +852,14 @@ class Benchmark {
     }
     char msg[100];
     snprintf(msg, sizeof(msg), "(%d of %d found)", found, num_);
+    micros(end);
+    print_timer_info("ReadRandom :: Total time taken to read all entries", start, end);
+    print_current_db_contents();
+
+//    db_->PrintTimerAudit();
+//    printf("==============================================================================\n");
+//    db_->ClearTimer();
+//    PrintStats("leveldb.stats");
     thread->stats.AddMessage(msg);
   }
 
@@ -836,23 +889,37 @@ class Benchmark {
   }
 
   void SeekRandom(ThreadState* thread) {
+	uint64_t a, b, c, d, e;
     ReadOptions options;
     std::string value;
     int found = 0;
+    micros(a);
+//    std::map<int, int> micros_count;
     for (int i = 0; i < reads_; i++) {
       Iterator* iter = db_->NewIterator(options);
       char key[100];
       const int k = thread->rand.Next() % FLAGS_num;
       snprintf(key, sizeof(key), "%016d", k);
+//      micros(c);
       iter->Seek(key);
+//      micros(d);
+//      micros_count[(d-c)]++;
+//      micros(e);
+//      printf("SeekRandom:: Seek complete for value %d-th value: %lu (with map addition - %lu)\n", i, d-c, e-c);
       if (iter->Valid() && iter->key() == key) found++;
       delete iter;
       thread->stats.FinishedSingleOp();
     }
+//	for (std::map<int, int>::iterator it = micros_count.begin(); it != micros_count.end(); it++) {
+//		printf("micros_count[%d] = %d\n", it->first, it->second);
+//	}
     char msg[100];
     snprintf(msg, sizeof(msg), "(%d of %d found)", found, num_);
     thread->stats.AddMessage(msg);
+    micros(b);
+    print_timer_info("SeekRandom:: Total time taken to seek N random values", a, b);
   }
+
 
   void DoDelete(ThreadState* thread, bool seq) {
     RandomGenerator gen;

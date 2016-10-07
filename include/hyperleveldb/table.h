@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include "hyperleveldb/iterator.h"
+#include "util/timer.h"
 
 namespace leveldb {
 
@@ -69,7 +70,8 @@ class Table {
   Status InternalGet(
       const ReadOptions&, const Slice& key,
       void* arg,
-      void (*handle_result)(void* arg, const Slice& k, const Slice& v));
+      void (*handle_result)(void* arg, const Slice& k, const Slice& v),
+	  Timer* timer);
 
 
   void ReadMeta(const Footer& footer);

@@ -9,6 +9,14 @@
 #include "hyperleveldb/table.h"
 #include "util/coding.h"
 
+#ifdef TIMER_LOG
+	#define start_timer(s) if (timer != NULL) timer->StartTimer(s)
+	#define record_timer(s) if (timer != NULL) timer->Record(s)
+#else
+	#define start_timer(s1)
+	#define record_timer(s1)
+#endif
+
 namespace leveldb {
 
 struct TableAndFile {
@@ -43,13 +51,14 @@ TableCache::~TableCache() {
 }
 
 Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
-                             Cache::Handle** handle) {
+                             Cache::Handle** handle, Timer* timer) {
   Status s;
   char buf[sizeof(file_number)];
   EncodeFixed64(buf, file_number);
   Slice key(buf, sizeof(buf));
   *handle = cache_->Lookup(key);
   if (*handle == NULL) {
+    start_timer(GET_TABLE_CACHE_GET_FROM_DISK);
     std::string fname = TableFileName(dbname_, file_number);
     RandomAccessFile* file = NULL;
     Table* table = NULL;
@@ -75,6 +84,7 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
       tf->table = table;
       *handle = cache_->Insert(key, tf, 1, &DeleteEntry);
     }
+    record_timer(GET_TABLE_CACHE_GET_FROM_DISK);
   }
   return s;
 }
@@ -88,7 +98,7 @@ Iterator* TableCache::NewIterator(const ReadOptions& options,
   }
 
   Cache::Handle* handle = NULL;
-  Status s = FindTable(file_number, file_size, &handle);
+  Status s = FindTable(file_number, file_size, &handle, NULL);
   if (!s.ok()) {
     return NewErrorIterator(s);
   }
@@ -107,13 +117,18 @@ Status TableCache::Get(const ReadOptions& options,
                        uint64_t file_size,
                        const Slice& k,
                        void* arg,
-                       void (*saver)(void*, const Slice&, const Slice&)) {
+                       void (*saver)(void*, const Slice&, const Slice&),
+					   Timer* timer) {
   Cache::Handle* handle = NULL;
-  Status s = FindTable(file_number, file_size, &handle);
+  start_timer(GET_TABLE_CACHE_FIND_TABLE);
+  Status s = FindTable(file_number, file_size, &handle, timer);
+  record_timer(GET_TABLE_CACHE_FIND_TABLE);
   if (s.ok()) {
+    start_timer(GET_TABLE_CACHE_INTERNAL_GET);
     Table* t = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
-    s = t->InternalGet(options, k, arg, saver);
+    s = t->InternalGet(options, k, arg, saver, timer);
     cache_->Release(handle);
+    record_timer(GET_TABLE_CACHE_INTERNAL_GET);
   }
   return s;
 }

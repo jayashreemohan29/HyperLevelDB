@@ -22,6 +22,7 @@
 #include "db/version_edit.h"
 #include "port/port.h"
 #include "port/thread_annotations.h"
+#include "util/timer.h"
 
 namespace leveldb {
 
@@ -174,7 +175,8 @@ class VersionSet {
   VersionSet(const std::string& dbname,
              const Options* options,
              TableCache* table_cache,
-             const InternalKeyComparator*);
+             const InternalKeyComparator*,
+			 Timer* timer);
   ~VersionSet();
 
   // Apply *edit to the current version to form a new descriptor that
@@ -182,7 +184,7 @@ class VersionSet {
   // current version.  Will release *mu while actually writing to the file.
   // REQUIRES: *mu is held on entry.
   // REQUIRES: no other thread concurrently calls LogAndApply()
-  Status LogAndApply(VersionEdit* edit, port::Mutex* mu, port::CondVar* cv, bool* wt)
+  Status LogAndApply(VersionEdit* edit, port::Mutex* mu, port::CondVar* cv, bool* wt, int mtc)
       EXCLUSIVE_LOCKS_REQUIRED(mu);
 
   // Recover the last saved descriptor from persistent storage.
@@ -322,6 +324,7 @@ class VersionSet {
   uint64_t last_sequence_;
   uint64_t log_number_;
   uint64_t prev_log_number_;  // 0 or backing store for memtable being compacted
+  Timer* timer;
 
   // Opened lazily
   ConcurrentWritableFile* descriptor_file_;

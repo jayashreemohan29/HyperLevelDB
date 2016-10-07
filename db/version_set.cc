@@ -21,6 +21,20 @@
 #include "util/coding.h"
 #include "util/logging.h"
 
+#ifdef TIMER_LOG
+	#define start_timer(s1, s2, mtc) (mtc == 1) ? timer->StartTimer(s1) : timer->StartTimer(s2)
+	#define vstart_timer(s1, s2, mtc) (mtc == 1) ? vset_->timer->StartTimer(s1) : vset_->timer->StartTimer(s2)
+
+	#define record_timer(s1, s2, mtc) (mtc == 1) ? timer->Record(s1) : timer->Record(s2)
+	#define vrecord_timer(s1, s2, mtc) (mtc == 1) ? vset_->timer->Record(s1) : vset_->timer->Record(s2)
+#else
+	#define start_timer(s1, s2, mtc)
+	#define vstart_timer(s1, s2, mtc)
+
+	#define record_timer(s1, s2, mtc)
+	#define vrecord_timer(s1, s2, mtc)
+#endif
+
 namespace leveldb {
 
 static double MaxBytesForLevel(unsigned level) {
@@ -398,6 +412,8 @@ Status Version::Get(const ReadOptions& options,
 
     // Get the list of files to search in this level
     FileMetaData* const* files = &files_[level][0];
+
+    vstart_timer(GET_FIND_LIST_OF_FILES, BEGIN, 1);
     if (level == 0) {
       // Level-0 files may overlap each other.  Find all files that
       // overlap user_key and process them in order from newest to oldest.
@@ -432,6 +448,12 @@ Status Version::Get(const ReadOptions& options,
         }
       }
     }
+    vrecord_timer(GET_FIND_LIST_OF_FILES, BEGIN, 1);
+//    uint64_t total_size = 0;
+//    for (int i = 0; i < num_files; i++) {
+//    	total_size += files[i]->file_size;
+//    }
+//    printf("Number of files to read - %d total file size to read - %llu level - %d\n", num_files, total_size, level);
 
     for (uint32_t i = 0; i < num_files; ++i) {
       if (last_file_read != NULL && stats->seek_file == NULL) {
@@ -444,13 +466,19 @@ Status Version::Get(const ReadOptions& options,
       last_file_read = f;
       last_file_read_level = level;
 
+      vstart_timer(GET_FILE_LEVEL_FILTER_CHECK, BEGIN, 1);
+      vrecord_timer(GET_FILE_LEVEL_FILTER_CHECK, BEGIN, 1);
       Saver saver;
       saver.state = kNotFound;
       saver.ucmp = ucmp;
       saver.user_key = user_key;
       saver.value = value;
+      vstart_timer(GET_TABLE_CACHE_GET, BEGIN, 1);
+//      uint64_t before = Env::Default()->NowMicros();
       s = vset_->table_cache_->Get(options, f->number, f->file_size,
-                                   ikey, &saver, SaveValue);
+                                   ikey, &saver, SaveValue, vset_->timer);
+//      printf("Time taken in table_cache get to search file %d at level %d of size %llu: %llu micros\n",  f->number, level, f->file_size, Env::Default()->NowMicros() - before);
+      vrecord_timer(GET_TABLE_CACHE_GET, BEGIN, 1);
       if (!s.ok()) {
         return s;
       }
@@ -757,12 +785,13 @@ class VersionSet::Builder {
   }
 
   // Save the current state in *v.
-  void SaveTo(Version* v) {
+  void SaveTo(Version* v, int mtc) {
     BySmallestKey cmp;
     cmp.internal_comparator = &vset_->icmp_;
     for (unsigned level = 0; level < config::kNumLevels; level++) {
       // Merge the set of added files with the set of pre-existing files.
       // Drop any deleted files.  Store the result in *v.
+      vstart_timer(MTC_SAVETO_ADD_FILES, BGC_SAVETO_ADD_FILES, mtc);
       const std::vector<FileMetaData*>& base_files = base_->files_[level];
       std::vector<FileMetaData*>::const_iterator base_iter = base_files.begin();
       std::vector<FileMetaData*>::const_iterator base_end = base_files.end();
@@ -786,8 +815,9 @@ class VersionSet::Builder {
       for (; base_iter != base_end; ++base_iter) {
         MaybeAddFile(v, level, *base_iter);
       }
+      vrecord_timer(MTC_SAVETO_ADD_FILES, BGC_SAVETO_ADD_FILES, mtc);
 
-#ifndef NDEBUG
+/*#ifndef NDEBUG
       // Make sure there is no overlap in levels > 0
       if (level > 0) {
         for (uint32_t i = 1; i < v->files_[level].size(); i++) {
@@ -801,7 +831,7 @@ class VersionSet::Builder {
           }
         }
       }
-#endif
+#endif*/
     }
   }
 
@@ -827,7 +857,8 @@ class VersionSet::Builder {
 VersionSet::VersionSet(const std::string& dbname,
                        const Options* options,
                        TableCache* table_cache,
-                       const InternalKeyComparator* cmp)
+                       const InternalKeyComparator* cmp,
+					   Timer* timer)
     : env_(options->env),
       dbname_(dbname),
       options_(options),
@@ -841,7 +872,8 @@ VersionSet::VersionSet(const std::string& dbname,
       descriptor_file_(NULL),
       descriptor_log_(NULL),
       dummy_versions_(this),
-      current_(NULL) {
+      current_(NULL),
+      timer(timer) {
   AppendVersion(new Version(this));
 }
 
@@ -871,7 +903,7 @@ void VersionSet::AppendVersion(Version* v) {
   v->next_->prev_ = v;
 }
 
-Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu, port::CondVar* cv, bool* wt) {
+Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu, port::CondVar* cv, bool* wt, int mtc = 0) {
   while (*wt) {
     cv->Wait();
   }
@@ -893,10 +925,17 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu, port::CondVar
   Version* v = new Version(this);
   {
     Builder builder(this, current_);
+    start_timer(MTC_LAA_APPLY_EDIT_TO_BUILDER, BGC_LAA_APPLY_EDIT_TO_BUILDER, mtc);
     builder.Apply(edit);
-    builder.SaveTo(v);
+    record_timer(MTC_LAA_APPLY_EDIT_TO_BUILDER, BGC_LAA_APPLY_EDIT_TO_BUILDER, mtc);
+
+    start_timer(MTC_LAA_SAVETO, BGC_LAA_SAVETO, mtc);
+    builder.SaveTo(v, mtc);
+    record_timer(MTC_LAA_SAVETO, BGC_LAA_SAVETO, mtc);
   }
+  start_timer(MTC_LAA_FINALIZE, BGC_LAA_FINALIZE, mtc);
   Finalize(v);
+  record_timer(MTC_LAA_FINALIZE, BGC_LAA_FINALIZE, mtc);
 
   // Initialize new descriptor log file if necessary by creating
   // a temporary file that contains a snapshot of the current version.
@@ -911,7 +950,10 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu, port::CondVar
     s = env_->NewConcurrentWritableFile(new_manifest_file, &descriptor_file_);
     if (s.ok()) {
       descriptor_log_ = new log::Writer(descriptor_file_);
+
+      start_timer(MTC_LAA_COMPLETE_WRITE_SNAPSHOT, BGC_LAA_COMPLETE_WRITE_SNAPSHOT, mtc);
       s = WriteSnapshot(descriptor_log_);
+      record_timer(MTC_LAA_COMPLETE_WRITE_SNAPSHOT, BGC_LAA_COMPLETE_WRITE_SNAPSHOT, mtc);
     }
   }
 
@@ -921,16 +963,24 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu, port::CondVar
 
     // Write new record to MANIFEST log
     if (s.ok()) {
-      std::string record;
-      edit->EncodeTo(&record);
-      s = descriptor_log_->AddRecord(record);
-      if (s.ok()) {
-        // XXX Unlock during expensive MANIFEST log write
-        s = descriptor_file_->Sync();
-      }
-      if (!s.ok()) {
-        Log(options_->info_log, "MANIFEST write: %s\n", s.ToString().c_str());
-      }
+        start_timer(MTC_LAA_ENCODE_EDIT, BGC_LAA_ENCODE_EDIT, mtc);
+        std::string record;
+        edit->EncodeTo(&record);
+        record_timer(MTC_LAA_ENCODE_EDIT, BGC_LAA_ENCODE_EDIT, mtc);
+
+        start_timer(MTC_LAA_ADD_RECORD_TO_DESC_LOG, BGC_LAA_ADD_RECORD_TO_DESC_LOG, mtc);
+        s = descriptor_log_->AddRecord(record);
+        record_timer(MTC_LAA_ADD_RECORD_TO_DESC_LOG, BGC_LAA_ADD_RECORD_TO_DESC_LOG, mtc);
+
+        start_timer(MTC_LAA_SYNC_MANIFEST_LOG_WRITE, BGC_LAA_SYNC_MANIFEST_LOG_WRITE, mtc);
+        if (s.ok()) {
+          // XXX Unlock during expensive MANIFEST log write
+          s = descriptor_file_->Sync();
+        }
+        record_timer(MTC_LAA_SYNC_MANIFEST_LOG_WRITE, BGC_LAA_SYNC_MANIFEST_LOG_WRITE, mtc);
+        if (!s.ok()) {
+          Log(options_->info_log, "MANIFEST write: %s\n", s.ToString().c_str());
+        }
     }
 
     // If we just created a new descriptor file, install it by writing a
@@ -939,12 +989,17 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu, port::CondVar
       s = SetCurrentFile(env_, dbname_, manifest_file_number_);
     }
 
+    start_timer(MTC_LAA_GET_LOCK_AFTER_MANIFEST_SYNC, BGC_LAA_GET_LOCK_AFTER_MANIFEST_SYNC, mtc);
     mu->Lock();
+    record_timer(MTC_LAA_GET_LOCK_AFTER_MANIFEST_SYNC, BGC_LAA_GET_LOCK_AFTER_MANIFEST_SYNC, mtc);
   }
 
   // Install the new version
   if (s.ok()) {
+    start_timer(MTC_LAA_APPEND_VERSION, BGC_LAA_APPEND_VERSION, mtc);
     AppendVersion(v);
+    record_timer(MTC_LAA_APPEND_VERSION, BGC_LAA_APPEND_VERSION, mtc);
+
     log_number_ = edit->log_number_;
     prev_log_number_ = edit->prev_log_number_;
   } else {
@@ -1068,7 +1123,7 @@ Status VersionSet::Recover() {
 
   if (s.ok()) {
     Version* v = new Version(this);
-    builder.SaveTo(v);
+    builder.SaveTo(v, 1);
     // Install recovered version
     Finalize(v);
     AppendVersion(v);
@@ -1667,5 +1722,4 @@ void Compaction::ReleaseInputs() {
     input_version_ = NULL;
   }
 }
-
 }  // namespace leveldb

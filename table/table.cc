@@ -15,6 +15,14 @@
 #include "table/two_level_iterator.h"
 #include "util/coding.h"
 
+#ifdef TIMER_LOG
+	#define start_timer(s) timer->StartTimer(s)
+	#define record_timer(s) timer->Record(s)
+#else
+	#define start_timer(s1)
+	#define record_timer(s1)
+#endif
+
 namespace leveldb {
 
 struct Table::Rep {
@@ -229,33 +237,44 @@ Iterator* Table::NewIterator(const ReadOptions& options) const {
 
 Status Table::InternalGet(const ReadOptions& options, const Slice& k,
                           void* arg,
-                          void (*saver)(void*, const Slice&, const Slice&)) {
-  Status s;
-  Iterator* iiter = rep_->index_block->NewIterator(rep_->options.comparator);
-  iiter->Seek(k);
-  if (iiter->Valid()) {
-    Slice handle_value = iiter->value();
-    FilterBlockReader* filter = rep_->filter;
-    BlockHandle handle;
-    if (filter != NULL &&
-        handle.DecodeFrom(&handle_value).ok() &&
-        !filter->KeyMayMatch(handle.offset(), k)) {
-      // Not found
-    } else {
-      Iterator* block_iter = BlockReader(this, options, iiter->value());
-      block_iter->Seek(k);
-      if (block_iter->Valid()) {
-        (*saver)(arg, block_iter->key(), block_iter->value());
-      }
-      s = block_iter->status();
-      delete block_iter;
-    }
-  }
-  if (s.ok()) {
-    s = iiter->status();
-  }
-  delete iiter;
-  return s;
+                          void (*saver)(void*, const Slice&, const Slice&),
+						  Timer* timer) {
+	  Status s;
+	  Iterator* iiter = rep_->index_block->NewIterator(rep_->options.comparator);
+	  start_timer(GET_TABLE_CACHE_INDEX_ITER_SEEK);
+	  iiter->Seek(k);
+	  record_timer(GET_TABLE_CACHE_INDEX_ITER_SEEK);
+
+	  if (iiter->Valid()) {
+	    Slice handle_value = iiter->value();
+	    FilterBlockReader* filter = rep_->filter;
+	    BlockHandle handle;
+	    start_timer(GET_TABLE_CACHE_FILTER_CHECK);
+	    if (filter != NULL &&
+	        handle.DecodeFrom(&handle_value).ok() &&
+	        !filter->KeyMayMatch(handle.offset(), k)) {
+	    	record_timer(GET_TABLE_CACHE_FILTER_CHECK);
+	//    	printf("Key is not present in this block according to BloomFilter. \n");
+	      // Not found
+	    } else {
+	      record_timer(GET_TABLE_CACHE_FILTER_CHECK);
+
+	      start_timer(GET_TABLE_CACHE_READ_DATA_BLOCK);
+	      Iterator* block_iter = BlockReader(this, options, iiter->value());
+	      block_iter->Seek(k);
+	      if (block_iter->Valid()) {
+	        (*saver)(arg, block_iter->key(), block_iter->value());
+	      }
+	      s = block_iter->status();
+	      delete block_iter;
+	      record_timer(GET_TABLE_CACHE_READ_DATA_BLOCK);
+	    }
+	  }
+	  if (s.ok()) {
+	    s = iiter->status();
+	  }
+	  delete iiter;
+	  return s;
 }
 
 
