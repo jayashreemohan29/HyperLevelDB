@@ -71,7 +71,7 @@ static const char* FLAGS_benchmarks = "fillrandom,readrandom"
   */  ;
 
 // Number of key/values to place in database
-static int FLAGS_num = 10000000;
+static int FLAGS_num = 1000000;
 
 // Number of read operations to do.  If negative, do FLAGS_num reads.
 static int FLAGS_reads = -1;
@@ -80,7 +80,7 @@ static int FLAGS_reads = -1;
 static int FLAGS_threads = 1;
 
 // Size of each value
-static int FLAGS_value_size = 100;
+static int FLAGS_value_size = 1024;
 
 // Arrange to generate values that shrink to this fraction of
 // their original size after compression
@@ -539,6 +539,9 @@ class Benchmark {
       } else if (name == Slice("readwhilewriting")) {
         num_threads++;  // Add extra thread for writing
         method = &Benchmark::ReadWhileWriting;
+      } else if (name == Slice("seekwhilewriting")) {
+        num_threads++;  // Add extra thread for writing
+        method = &Benchmark::SeekWhileWriting;
       } else if (name == Slice("compact")) {
         method = &Benchmark::Compact;
       } else if (name == Slice("crc32c")) {
@@ -915,9 +918,10 @@ class Benchmark {
 //	}
     char msg[100];
     snprintf(msg, sizeof(msg), "(%d of %d found)", found, num_);
-    thread->stats.AddMessage(msg);
     micros(b);
     print_timer_info("SeekRandom:: Total time taken to seek N random values", a, b);
+    print_current_db_contents();
+    thread->stats.AddMessage(msg);
   }
 
 
@@ -948,6 +952,36 @@ class Benchmark {
 
   void DeleteRandom(ThreadState* thread) {
     DoDelete(thread, false);
+  }
+
+  void SeekWhileWriting(ThreadState* thread) {
+    if (thread->tid > 0) {
+      SeekRandom(thread);
+    } else {
+      // Special thread that keeps writing until other threads are done.
+      RandomGenerator gen;
+      while (true) {
+        {
+          MutexLock l(&thread->shared->mu);
+          if (thread->shared->num_done + 1 >= thread->shared->num_initialized) {
+            // Other threads have finished
+            break;
+          }
+        }
+
+        const int k = thread->rand.Next() % FLAGS_num;
+        char key[100];
+        snprintf(key, sizeof(key), "%016d", k);
+        Status s = db_->Put(write_options_, key, gen.Generate(value_size_));
+        if (!s.ok()) {
+          fprintf(stderr, "put error: %s\n", s.ToString().c_str());
+          exit(1);
+        }
+      }
+
+      // Do not count any of the preceding work/delay in stats.
+      thread->stats.Start();
+    }
   }
 
   void ReadWhileWriting(ThreadState* thread) {
@@ -1019,6 +1053,7 @@ class Benchmark {
 int main(int argc, char** argv) {
   FLAGS_write_buffer_size = leveldb::Options().write_buffer_size;
   FLAGS_open_files = leveldb::Options().max_open_files;
+  FLAGS_open_files = 20;
   std::string default_db_path;
 
   for (int i = 1; i < argc; i++) {

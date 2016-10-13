@@ -648,6 +648,9 @@ std::string Version::DebugString() const {
     AppendNumberTo(&r, level);
     r.append(" ---\n");
     const std::vector<FileMetaData*>& files = files_[level];
+    r.append(" num_files: ");
+    AppendNumberTo(&r, files.size());
+    r.append("\n");
     for (size_t i = 0; i < files.size(); i++) {
       r.push_back(' ');
       AppendNumberTo(&r, files[i]->number);
