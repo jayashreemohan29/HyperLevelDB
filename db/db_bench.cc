@@ -50,7 +50,7 @@
 //      stats       -- Print DB stats
 //      sstables    -- Print sstable info
 //      heapprofile -- Dump a heap profile (if supported by this port)
-static const char* FLAGS_benchmarks = "fillrandom,readrandom"
+static const char* FLAGS_benchmarks = "fillrandom,readrandom,seekrandom"
 /*    "fillseq,"
     "fillsync,"
     "fillrandom,"
@@ -989,6 +989,8 @@ class Benchmark {
       ReadRandom(thread);
     } else {
       // Special thread that keeps writing until other threads are done.
+      int max_writes = 11018792;
+      int num_writes = 0, num_actual_writes = 0;
       RandomGenerator gen;
       while (true) {
         {
@@ -1002,13 +1004,17 @@ class Benchmark {
         const int k = thread->rand.Next() % FLAGS_num;
         char key[100];
         snprintf(key, sizeof(key), "%016d", k);
-        Status s = db_->Put(write_options_, key, gen.Generate(value_size_));
-        if (!s.ok()) {
-          fprintf(stderr, "put error: %s\n", s.ToString().c_str());
-          exit(1);
+        if (num_writes < max_writes) {
+			Status s = db_->Put(write_options_, key, gen.Generate(value_size_));
+			if (!s.ok()) {
+			  fprintf(stderr, "put error: %s\n", s.ToString().c_str());
+			  exit(1);
+			}
+			num_actual_writes++;
         }
+        num_writes++;
       }
-
+      printf("Number of actual writes: %d\n", num_actual_writes);
       // Do not count any of the preceding work/delay in stats.
       thread->stats.Start();
     }
@@ -1053,7 +1059,7 @@ class Benchmark {
 int main(int argc, char** argv) {
   FLAGS_write_buffer_size = leveldb::Options().write_buffer_size;
   FLAGS_open_files = leveldb::Options().max_open_files;
-  FLAGS_open_files = 20;
+  FLAGS_open_files = 1000;
   std::string default_db_path;
 
   for (int i = 1; i < argc; i++) {
