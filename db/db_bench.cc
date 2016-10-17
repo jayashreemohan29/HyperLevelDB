@@ -2,6 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
+#include <cassert>
+#include <iostream>
+#include <string>
+#include <cstring>
+#include <sstream>
+#include <cstdlib>
+#include <sys/mman.h>
+#include <sys/time.h>
+#include <sys/time.h>
+#include <sys/resource.h>
+
 #include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,6 +28,10 @@
 #include "util/mutexlock.h"
 #include "util/random.h"
 #include "util/testutil.h"
+
+#define MAX_TRACE_OPS 50000000
+#define MAX_VALUE_SIZE (1024 * 1024)
+#define sassert(X) {if (!(X)) std::cerr << "\n\n\n\n" << status.ToString() << "\n\n\n\n"; assert(X);}
 
 //#define TIMER_LOG
 
@@ -50,7 +65,7 @@
 //      stats       -- Print DB stats
 //      sstables    -- Print sstable info
 //      heapprofile -- Dump a heap profile (if supported by this port)
-static const char* FLAGS_benchmarks = "fillrandom,readrandom,seekrandom"
+static const char* FLAGS_benchmarks = "ycsb"
 /*    "fillseq,"
     "fillsync,"
     "fillrandom,"
@@ -71,7 +86,7 @@ static const char* FLAGS_benchmarks = "fillrandom,readrandom,seekrandom"
   */  ;
 
 // Number of key/values to place in database
-static int FLAGS_num = 1000000;
+static int FLAGS_num = 10000000;
 
 // Number of read operations to do.  If negative, do FLAGS_num reads.
 static int FLAGS_reads = -1;
@@ -459,6 +474,226 @@ class Benchmark {
     Open(); //DB::Open(opts, dbname_, &db_);
   }
 
+  struct trace_operation_t {
+  	char cmd;
+  	unsigned long long key;
+  	unsigned long param;
+  };
+  struct trace_operation_t *trace_ops;
+
+  struct result_t {
+  	unsigned long long ycsbdata;
+  	unsigned long long kvdata;
+  	unsigned long long ycsb_r;
+  	unsigned long long ycsb_d;
+  	unsigned long long ycsb_i;
+  	unsigned long long ycsb_u;
+  	unsigned long long ycsb_s;
+  	unsigned long long kv_p;
+  	unsigned long long kv_g;
+  	unsigned long long kv_d;
+  	unsigned long long kv_itseek;
+  	unsigned long long kv_itnext;
+  };
+
+  struct result_t result = {};
+
+  unsigned long long print_splitup() {
+  	printf("YCSB splitup: R = %llu, D = %llu, I = %llu, U = %llu, S = %llu\n",
+  			result.ycsb_r,
+  			result.ycsb_d,
+  			result.ycsb_i,
+  			result.ycsb_u,
+  			result.ycsb_s);
+  	printf("LevelDB/WiscKey splitup: P = %llu, G = %llu, D = %llu, ItSeek = %llu, ItNext = %llu\n",
+  			result.kv_p,
+  			result.kv_g,
+  			result.kv_d,
+  			result.kv_itseek,
+  			result.kv_itnext);
+  	return result.ycsb_r + result.ycsb_d + result.ycsb_i + result.ycsb_u + result.ycsb_s;
+  }
+
+  void parse_trace(const char *file) {
+  	int ret;
+  	char *buf;
+  	FILE *fp;
+  	size_t bufsize = 1000;
+  	struct trace_operation_t *curop = NULL;
+  	unsigned long long total_ops = 0;
+
+  	printf("Parsing trace ...\n");
+  	trace_ops = (struct trace_operation_t *) mmap(NULL, MAX_TRACE_OPS * sizeof(struct trace_operation_t),
+  			PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  	if (trace_ops == MAP_FAILED)
+  		perror(NULL);
+  	assert(trace_ops != MAP_FAILED);
+
+  	buf = (char *) malloc(bufsize);
+  	assert (buf != NULL);
+
+  	fp = fopen(file, "r");
+  	assert(fp != NULL);
+  	curop = trace_ops;
+  	while((ret = getline(&buf, &bufsize, fp)) > 0) {
+  		char tmp[1000];
+  		ret = sscanf(buf, "%c %llu %lu\n", &curop->cmd, &curop->key, &curop->param);
+  		assert(ret == 2 || ret == 3);
+  		if (curop->cmd == 'r' || curop->cmd == 'd') {
+  			assert(ret == 2);
+  			sprintf(tmp, "%c %llu\n", curop->cmd, curop->key);
+  			assert(strcmp(tmp, buf) == 0);
+  		} else if (curop->cmd == 's' || curop->cmd == 'u' || curop->cmd == 'i') {
+  			assert(ret == 3);
+  			sprintf(tmp, "%c %llu %lu\n", curop->cmd, curop->key, curop->param);
+  			assert(strcmp(tmp, buf) == 0);
+  		} else {
+  			assert(false);
+  		}
+  		curop++;
+  		total_ops++;
+  	}
+  	printf("Done parsing, %llu operations.\n", total_ops);
+  }
+
+  char valuebuf[MAX_VALUE_SIZE];
+
+  void perform_op(DB *db, struct trace_operation_t *op) {
+  	char keybuf[100];
+  	int keylen;
+  	Status status;
+  	static struct ReadOptions roptions;
+  	static struct WriteOptions woptions;
+
+  	keylen = sprintf(keybuf, "user%llu", op->key);
+  	Slice key(keybuf, keylen);
+
+  	if (op->cmd == 'r') {
+  		std::string value;
+  		status = db->Get(roptions, key, &value);
+  		sassert(status.ok());
+  		result.ycsbdata += keylen + value.length();
+  		result.kvdata += keylen + value.length();
+  		//assert(value.length() == 1080);
+  		result.ycsb_r++;
+  		result.kv_g++;
+  	} else if (op->cmd == 'd') {
+  		status = db->Delete(woptions, key);
+  		sassert(status.ok());
+  		result.ycsbdata += keylen;
+  		result.kvdata += keylen;
+  		result.ycsb_d++;
+  		result.kv_d++;
+  	} else if (op->cmd == 'i') {
+  		// op->param refers to the size of the value.
+  		status = db->Put(woptions, key, Slice(valuebuf, op->param));
+  		sassert(status.ok());
+  		result.ycsbdata += keylen + op->param;
+  		result.kvdata += keylen + op->param;
+  		result.ycsb_i++;
+  		result.kv_p++;
+  	} else if (op->cmd == 'u') {
+  		// op->param refers to the size of the *updated part of the value*.
+  		std::string value;
+  		status = db->Get(roptions, key, &value);
+  		//if (!(status.ok() && op->param < value.length())) {
+  			//fprintf(stderr, "value.length = %lu, op->param = %lu\n", value.length(), op->param);
+  		//}
+  		//assert(value.length() == 1080);
+  		//assert(status.ok() && op->param < value.length());
+
+  		// The size of the new updated entry remains the same,
+  		// irrespective of the size of the updated part.
+  //		status = db->Put(woptions, key, Slice(valuebuf, value.length()));
+  		status = db->Put(woptions, key, Slice(valuebuf, 16440));
+  		sassert(status.ok());
+  		result.ycsbdata += keylen + op->param;
+  //		result.kvdata += 2 * (keylen + value.length());
+  		result.kvdata += 2 * (keylen + 16440);
+  		result.ycsb_u++;
+  		result.kv_g++;
+  		result.kv_p++;
+  	} else if (op->cmd == 's') {
+  		// op->param refers to the number of records to scan.
+  		int retrieved = 0;
+  		result.kv_itseek++;
+  		Iterator *it;
+  		it = db->NewIterator(ReadOptions());
+  		for (it->Seek(key); it->Valid() && retrieved < op->param; it->Next()) {
+  			if (!it->status().ok())
+  				std::cerr << "\n\n" << it->status().ToString() << "\n\n";
+  			assert(it->status().ok());
+
+  			// Actually retrieving the key and the value, since
+  			// that might incur disk reads.
+  			unsigned long retvlen = it->value().ToString().length();
+  			unsigned long retklen = it->key().ToString().length();
+  			result.ycsbdata += retklen + retvlen;
+  			result.kvdata += retklen + retvlen;
+
+  			result.kv_itnext++;
+  			retrieved ++;
+  		}
+  		delete it;
+  		result.ycsb_s++;
+  	} else {
+  		assert(false);
+  	}
+  }
+
+  #define envinput(var, type) {assert(getenv(#var)); int ret = sscanf(getenv(#var), type, &var); assert(ret == 1);}
+  #define envstrinput(var) strcpy(var, getenv(#var))
+
+  void YCSB() {
+	char trace_file[1000];
+
+	envstrinput(trace_file);
+
+	parse_trace(trace_file);
+
+	struct rlimit rlim;
+	rlim.rlim_cur = 1000000;
+	rlim.rlim_max = 1000000;
+	int ret;// = setrlimit(RLIMIT_NOFILE, &rlim);
+//	assert(ret == 0);
+
+	struct trace_operation_t *curop = trace_ops;
+	unsigned long long total_ops = 0;
+	struct timeval start, end;
+
+	printf("Replaying trace ...\n");
+
+	gettimeofday(&start, NULL);
+	fprintf(stderr, "\nCompleted 0 ops");
+	fflush(stderr);
+	while(curop->cmd) {
+		perform_op(db_, curop);
+		curop++;
+		total_ops++;
+		if (total_ops % 100 == 0) {
+			fprintf(stderr, "\rCompleted %llu ops", total_ops);
+		}
+	}
+	PrintStats("leveldb.stats");
+	fprintf(stderr, "\r");
+	ret = gettimeofday(&end, NULL);
+	double secs = (end.tv_sec - start.tv_sec) + double(end.tv_usec - start.tv_usec) / 1000000;
+
+	printf("\n\nDone replaying %llu operations.\n", total_ops);
+	unsigned long long splitup_ops = print_splitup();
+	assert(splitup_ops == total_ops);
+	printf("Time taken = %0.3lf seconds\n", secs);
+	printf("Total data: YCSB = %0.6lf GB, HyperLevelDB = %0.6lf GB\n",
+			double(result.ycsbdata) / 1024.0 / 1024.0 / 1024.0,
+			double(result.kvdata) / 1024.0 / 1024.0 / 1024.0);
+	printf("Ops/s = %0.3lf Kops/s\n", double(total_ops) / 1024.0 / secs);
+
+	double throughput = double(result.ycsbdata) / secs;
+	printf("YCSB throughput = %0.6lf MB/s\n", throughput / 1024.0 / 1024.0);
+	throughput = double(result.kvdata) / secs;
+	printf("HyperLevelDB throughput = %0.6lf MB/s\n", throughput / 1024.0 / 1024.0);
+  }
+
   void print_current_db_contents() {
 	  std::string current_db_state;
 	  printf("----------------------Current DB state-----------------------\n");
@@ -472,6 +707,18 @@ class Benchmark {
     Open();
 
     const char* benchmarks = FLAGS_benchmarks;
+    if (benchmarks != NULL && strcmp(benchmarks, "ycsb") == 0) {
+    	if (!FLAGS_use_existing_db) {
+          delete db_;
+          db_ = NULL;
+          DestroyDB(FLAGS_db, Options());
+          Open();
+    	}
+    	YCSB();
+    	print_current_db_contents();
+    	return;
+    }
+
     while (benchmarks != NULL) {
       const char* sep = strchr(benchmarks, ',');
       Slice name;
@@ -504,6 +751,9 @@ class Benchmark {
       } else if (name == Slice("fillrandom")) {
         fresh_db = true;
         method = &Benchmark::WriteRandom;
+      } else if (name == Slice("reopen")) {
+        fresh_db = false;
+        method = &Benchmark::Reopen;
       } else if (name == Slice("overwrite")) {
         fresh_db = false;
         method = &Benchmark::WriteRandom;
@@ -558,6 +808,9 @@ class Benchmark {
         PrintStats("leveldb.stats");
       } else if (name == Slice("sstables")) {
         PrintStats("leveldb.sstables");
+      } else if (name == Slice("printdb")) {
+    	fresh_db = false;
+    	method = &Benchmark::PrintDB;
       } else {
         if (name != Slice()) {  // No error message for empty name
           fprintf(stderr, "unknown benchmark '%s'\n", name.ToString().c_str());
@@ -758,6 +1011,22 @@ class Benchmark {
     }
   }
 
+  void PrintDB(ThreadState* thread) {
+	  print_current_db_contents();
+  }
+
+  void Reopen(ThreadState* thread) {
+//	printf("Database before reopening -- \n");
+//	print_current_db_contents();
+	printf("Reopening database . . \n");
+	TryReopen();
+//	printf("Database after reopening -- \n");
+//	print_current_db_contents();
+//	printf("Sleeping for sometime for background compaction to complete . . \n");
+//	Env::Default()->SleepForMicroseconds(10000000);
+//	print_current_db_contents();
+  }
+
   void WriteSeq(ThreadState* thread) {
     DoWrite(thread, true);
   }
@@ -857,7 +1126,7 @@ class Benchmark {
     snprintf(msg, sizeof(msg), "(%d of %d found)", found, num_);
     micros(end);
     print_timer_info("ReadRandom :: Total time taken to read all entries", start, end);
-    print_current_db_contents();
+//    print_current_db_contents();
 
 //    db_->PrintTimerAudit();
 //    printf("==============================================================================\n");
@@ -920,7 +1189,7 @@ class Benchmark {
     snprintf(msg, sizeof(msg), "(%d of %d found)", found, num_);
     micros(b);
     print_timer_info("SeekRandom:: Total time taken to seek N random values", a, b);
-    print_current_db_contents();
+//    print_current_db_contents();
     thread->stats.AddMessage(msg);
   }
 
