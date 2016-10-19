@@ -227,6 +227,7 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
 
   // Reserve ten files or so for other uses and give the rest to TableCache.
   const int table_cache_size = options_.max_open_files - kNumNonTableCacheFiles;
+  printf("Creating table_cache of size %d\n", table_cache_size);
   table_cache_ = new TableCache(dbname_, &options_, table_cache_size);
   timer = new Timer();
   versions_ = new VersionSet(dbname_, &options_, table_cache_,

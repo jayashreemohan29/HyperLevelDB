@@ -122,7 +122,7 @@ static int FLAGS_bloom_bits = 10;
 // If true, do not destroy the existing database.  If you set this
 // flag and also specify a benchmark that wants a fresh database, that
 // benchmark will fail.
-static bool FLAGS_use_existing_db = false;
+static bool FLAGS_use_existing_db = true;
 
 // Use the db with the following name.
 static const char* FLAGS_db = NULL;
@@ -455,6 +455,7 @@ class Benchmark {
         Env::Default()->DeleteFile(std::string(FLAGS_db) + "/" + files[i]);
       }
     }
+    printf("Block cache size: %d\n", FLAGS_cache_size);
     if (!FLAGS_use_existing_db) {
       DestroyDB(FLAGS_db, Options());
     }
@@ -593,23 +594,12 @@ class Benchmark {
   		result.ycsb_i++;
   		result.kv_p++;
   	} else if (op->cmd == 'u') {
-  		// op->param refers to the size of the *updated part of the value*.
-  		std::string value;
-  		status = db->Get(roptions, key, &value);
-  		//if (!(status.ok() && op->param < value.length())) {
-  			//fprintf(stderr, "value.length = %lu, op->param = %lu\n", value.length(), op->param);
-  		//}
-  		//assert(value.length() == 1080);
-  		//assert(status.ok() && op->param < value.length());
-
-  		// The size of the new updated entry remains the same,
-  		// irrespective of the size of the updated part.
-  //		status = db->Put(woptions, key, Slice(valuebuf, value.length()));
-  		status = db->Put(woptions, key, Slice(valuebuf, 16440));
+  		int update_value_size = 1024;
+  		status = db->Put(woptions, key, Slice(valuebuf, update_value_size));
   		sassert(status.ok());
   		result.ycsbdata += keylen + op->param;
   //		result.kvdata += 2 * (keylen + value.length());
-  		result.kvdata += 2 * (keylen + 16440);
+  		result.kvdata += keylen + update_value_size;
   		result.ycsb_u++;
   		result.kv_g++;
   		result.kv_p++;
@@ -670,7 +660,7 @@ class Benchmark {
 		perform_op(db_, curop);
 		curop++;
 		total_ops++;
-		if (total_ops % 100 == 0) {
+		if (total_ops % 10000 == 0) {
 			fprintf(stderr, "\rCompleted %llu ops", total_ops);
 		}
 	}
@@ -1328,7 +1318,7 @@ class Benchmark {
 int main(int argc, char** argv) {
   FLAGS_write_buffer_size = leveldb::Options().write_buffer_size;
   FLAGS_open_files = leveldb::Options().max_open_files;
-  FLAGS_open_files = 1000;
+  FLAGS_open_files = 64;
   std::string default_db_path;
 
   for (int i = 1; i < argc; i++) {

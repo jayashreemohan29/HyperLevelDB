@@ -190,14 +190,17 @@ Iterator* Table::BlockReader(void* arg,
   if (s.ok()) {
     BlockContents contents;
     if (block_cache != NULL) {
+//      printf("Searching cache . . .\n");
       char cache_key_buffer[16];
       EncodeFixed64(cache_key_buffer, table->rep_->cache_id);
       EncodeFixed64(cache_key_buffer+8, handle.offset());
       Slice key(cache_key_buffer, sizeof(cache_key_buffer));
       cache_handle = block_cache->Lookup(key);
       if (cache_handle != NULL) {
+//    	printf("Cache hit !\n");
         block = reinterpret_cast<Block*>(block_cache->Value(cache_handle));
       } else {
+//    	printf("Cache miss ! Reading from disk . . .\n");
         s = ReadBlock(table->rep_->file, options, handle, &contents);
         if (s.ok()) {
           block = new Block(contents);
@@ -208,6 +211,7 @@ Iterator* Table::BlockReader(void* arg,
         }
       }
     } else {
+//      printf("Cache not set. Reading data block from disk . . .\n");
       s = ReadBlock(table->rep_->file, options, handle, &contents);
       if (s.ok()) {
         block = new Block(contents);
