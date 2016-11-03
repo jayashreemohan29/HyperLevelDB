@@ -65,7 +65,7 @@
 //      stats       -- Print DB stats
 //      sstables    -- Print sstable info
 //      heapprofile -- Dump a heap profile (if supported by this port)
-static const char* FLAGS_benchmarks = "ycsb"
+static const char* FLAGS_benchmarks = "fillrandom,printdb,readrandom,printdb,seekrandom,printdb"
 /*    "fillseq,"
     "fillsync,"
     "fillrandom,"
@@ -86,7 +86,7 @@ static const char* FLAGS_benchmarks = "ycsb"
   */  ;
 
 // Number of key/values to place in database
-static int FLAGS_num = 10000000;
+static int FLAGS_num = 100000000;
 
 // Number of read operations to do.  If negative, do FLAGS_num reads.
 static int FLAGS_reads = -1;
@@ -1059,10 +1059,10 @@ class Benchmark {
     micros(after_g);
     print_timer_info("DoWrite() method :: Total time", before_g, after_g);
 
-    printf("Reopening database . . \n");
-    TryReopen();
-    printf("Sleeping for 10 seconds for the background compactions to complete. \n");
-    Env::Default()->SleepForMicroseconds(10000000);
+//    printf("Reopening database . . \n");
+//    TryReopen();
+//    printf("Sleeping for 10 seconds for the background compactions to complete. \n");
+//    Env::Default()->SleepForMicroseconds(10000000);
 
 //    db_->PrintTimerAudit();
 //    printf("============================================================================\n");
