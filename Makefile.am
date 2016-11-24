@@ -153,8 +153,8 @@ libhyperleveldb_la_SOURCES += util/logging.cc
 libhyperleveldb_la_SOURCES += util/options.cc
 libhyperleveldb_la_SOURCES += util/status.cc
 libhyperleveldb_la_SOURCES += port/port_posix.cc
-libhyperleveldb_la_LIBADD = $(SNAPPY_LIBS) -lpthread
-libhyperleveldb_la_LDFLAGS = -lpthread $(AM_LDFLAGS) $(LDFLAGS)
+libhyperleveldb_la_LIBADD = $(SNAPPY_LIBS) -lpthread -lsnappy
+libhyperleveldb_la_LDFLAGS = -lpthread -lsnappy $(AM_LDFLAGS) $(LDFLAGS)
 
 TESTUTIL = util/testutil.cc
 TESTHARNESS = util/testharness.cc $(TESTUTIL)
@@ -196,11 +196,11 @@ check_PROGRAMS += issue200_test
 TESTS = $(check_PROGRAMS)
 
 benchmark_SOURCES = benchmark.cc
-benchmark_LDADD = libhyperleveldb.la -lpthread -le -lpopt -lygor
+benchmark_LDADD = libhyperleveldb.la -lpthread -lsnappy -le -lpopt -lygor
 benchmark_LDFLAGS = -no-install
 
 db_bench_SOURCES = db/db_bench.cc $(TESTUTIL)
-db_bench_LDADD = libhyperleveldb.la -lpthread
+db_bench_LDADD = libhyperleveldb.la -lpthread -lsnappy
 
 db_bench_sqlite3_SOURCES = doc/bench/db_bench_sqlite3.cc $(TESTUTIL)
 db_bench_sqlite3_LDADD = -lsqlite3
@@ -209,10 +209,10 @@ db_bench_tree_db_SOURCES = doc/bench/db_bench_tree_db.cc $(TESTUTIL)
 db_bench_tree_db_LDADD = -lkyotocabinet
 
 leveldbutil_SOURCES = db/leveldb_main.cc
-leveldbutil_LDADD = libhyperleveldb.la -lpthread
+leveldbutil_LDADD = libhyperleveldb.la -lpthread -lsnappy
 
 leveldb_dump_all_SOURCES = leveldb-dump-all.cc
-leveldb_dump_all_LDADD = libhyperleveldb.la -lpthread
+leveldb_dump_all_LDADD = libhyperleveldb.la -lpthread -lsnappy
 
 leveldb_verify_SOURCES = leveldb-verify.cc
 leveldb_verify_LDADD = libhyperleveldb.la -lpthread
