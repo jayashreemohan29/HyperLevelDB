@@ -5,10 +5,13 @@
 #ifndef STORAGE_LEVELDB_TABLE_MERGER_H_
 #define STORAGE_LEVELDB_TABLE_MERGER_H_
 
+#include "util/timer.h"
+
 namespace leveldb {
 
 class Comparator;
 class Iterator;
+class Timer;
 
 // Return an iterator that provided the union of the data in
 // children[0,n-1].  Takes ownership of the child iterators and
@@ -19,7 +22,7 @@ class Iterator;
 //
 // REQUIRES: n >= 0
 extern Iterator* NewMergingIterator(
-    const Comparator* comparator, Iterator** children, int n);
+    const Comparator* comparator, Iterator** children, int n, Timer* timer);
 
 }  // namespace leveldb
 

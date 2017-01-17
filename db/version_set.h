@@ -281,6 +281,7 @@ class VersionSet {
     char buffer[100];
   };
   const char* LevelSummary(LevelSummaryStorage* scratch) const;
+  Timer* timer;
 
  private:
   class Builder;
@@ -324,7 +325,6 @@ class VersionSet {
   uint64_t last_sequence_;
   uint64_t log_number_;
   uint64_t prev_log_number_;  // 0 or backing store for memtable being compacted
-  Timer* timer;
 
   // Opened lazily
   ConcurrentWritableFile* descriptor_file_;

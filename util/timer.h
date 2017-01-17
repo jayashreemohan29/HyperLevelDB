@@ -13,6 +13,7 @@
 #include "util/logging.h"
 
 //#define TIMER_LOG
+//#define TIMER_LOG_SEEK
 
 namespace leveldb {
 
@@ -130,6 +131,11 @@ enum TimerStep {
 	MTC_LAA_WAIT_FOR_LIVE_BACKUP,
 	BGC_LAA_WAIT_FOR_LIVE_BACKUP,
 	SEEK_NUM_TABLE_ITERATOR,
+	SEEK_SEQUENTIAL_TOTAL,
+	SEEK_TITERATOR_SEQUENTIAL_TOTAL,
+	SEEK_TITERATOR_SEQUENTIAL_FILES,
+	SEEK_REINIT,
+	SEEK_NEXT,
 	END
 
 };
@@ -139,6 +145,7 @@ private:
 	uint64_t micros_array[200];
 	uint64_t timer_micros[200];
 	uint64_t timer_count[200];
+	uint64_t timer_count_additional[200];
 	std::string message[200];
 
 public:
@@ -262,6 +269,11 @@ public:
 		message[GET_TABLE_CACHE_WAIT_FOR_READ_THREADS] = "GET_TABLE_CACHE_WAIT_FOR_READ_THREADS";
 		message[GET_FILE_LEVEL_FILTER_CHECK] = "GET_FILE_LEVEL_FILTER_CHECK";
 		message[SEEK_NUM_TABLE_ITERATOR] = "SEEK_NUM_TABLE_ITERATOR";
+		message[SEEK_SEQUENTIAL_TOTAL] = "SEEK_SEQUENTIAL_TOTAL";
+		message[SEEK_TITERATOR_SEQUENTIAL_TOTAL] = "SEEK_TITERATOR_SEQUENTIAL_TOTAL";
+		message[SEEK_TITERATOR_SEQUENTIAL_FILES] = "SEEK_TITERATOR_SEQUENTIAL_FILES";
+		message[SEEK_REINIT] = "SEEK_REINIT";
+		message[SEEK_NEXT] = "SEEK_NEXT";
 		clear();
 	}
 
@@ -279,9 +291,20 @@ public:
 		timer_count[step]++;
 	}
 
+	void Record(TimerStep step, uint64_t additional_count) {
+//		if (micros_array[step] == 0) {
+//			printf("micros_array[%s] is 0 before record ! Not recording the timer value. \n", message[step].c_str());
+//			return;
+//		}
+		assert(micros_array[step] != 0);
+		timer_micros[step] += Env::Default()->NowMicros() - micros_array[step];
+		timer_count[step]++;
+		timer_count_additional[step] += additional_count;
+	}
+
 	void clear() {
 		for (int i = BEGIN; i < END; i++) {
-			micros_array[i] = timer_micros[i] = timer_count[i] = 0;
+			micros_array[i] = timer_micros[i] = timer_count[i] = timer_count_additional[i] = 0;
 		}
 	}
 
@@ -295,10 +318,25 @@ public:
 				AppendNumberTo(&result, timer_micros[i]);
 				result.append(" timer_count: ");
 				AppendNumberTo(&result, timer_count[i]);
+				result.append(" timer_count_additional: ");
+				AppendNumberTo(&result, timer_count_additional[i]);
 				result.append("\n");
 			}
 		}
 		return result;
+	}
+
+	void AppendTimerInfo(Timer* timer) {
+		if (timer == NULL) {
+			return;
+		}
+		for (int i = BEGIN; i < END; i++) {
+			if (timer->timer_count[i] > 0) {
+				timer_count[i] += timer->timer_count[i];
+				timer_count_additional[i] += timer->timer_count_additional[i];
+				timer_micros[i] += timer->timer_micros[i];
+			}
+		}
 	}
 };
 

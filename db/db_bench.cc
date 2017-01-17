@@ -122,7 +122,7 @@ static int FLAGS_bloom_bits = 10;
 // If true, do not destroy the existing database.  If you set this
 // flag and also specify a benchmark that wants a fresh database, that
 // benchmark will fail.
-static bool FLAGS_use_existing_db = true;
+static bool FLAGS_use_existing_db = false;
 
 // Use the db with the following name.
 static const char* FLAGS_db = NULL;
@@ -455,7 +455,7 @@ class Benchmark {
         Env::Default()->DeleteFile(std::string(FLAGS_db) + "/" + files[i]);
       }
     }
-    printf("Block cache size: %d\n", FLAGS_cache_size);
+//    printf("Block cache size: %d\n", FLAGS_cache_size);
     if (!FLAGS_use_existing_db) {
       DestroyDB(FLAGS_db, Options());
     }
@@ -609,7 +609,9 @@ class Benchmark {
   		result.kv_itseek++;
   		Iterator *it;
   		it = db->NewIterator(ReadOptions());
-  		for (it->Seek(key); it->Valid() && retrieved < op->param; it->Next()) {
+  		int required = op->param;
+//  		required = 1;
+  		for (it->Seek(key); it->Valid() && retrieved < required; it->Next()) {
   			if (!it->status().ok())
   				std::cerr << "\n\n" << it->status().ToString() << "\n\n";
   			assert(it->status().ok());
@@ -704,6 +706,7 @@ class Benchmark {
           DestroyDB(FLAGS_db, Options());
           Open();
     	}
+    	print_current_db_contents();
     	YCSB();
     	print_current_db_contents();
     	return;
@@ -1319,6 +1322,7 @@ int main(int argc, char** argv) {
   FLAGS_write_buffer_size = leveldb::Options().write_buffer_size;
   FLAGS_open_files = leveldb::Options().max_open_files;
   FLAGS_open_files = 64;
+//  FLAGS_open_files = 1000;
   std::string default_db_path;
 
   for (int i = 1; i < argc; i++) {

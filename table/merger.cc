@@ -10,6 +10,20 @@
 #include "hyperleveldb/iterator.h"
 #include "table/iterator_wrapper.h"
 
+#ifdef TIMER_LOG_SEEK
+	#define start_timer(s) timer_->StartTimer(s)
+	#define record_timer(s) timer_->Record(s)
+
+	#define start_timer2(s, count) timer_->StartTimer(s)
+	#define record_timer2(s, count) timer_->Record(s, count)
+#else
+	#define start_timer(s)
+	#define record_timer(s)
+
+	#define start_timer2(s, count)
+	#define record_timer2(s, count)
+#endif
+
 namespace leveldb {
 
 namespace {
@@ -33,7 +47,7 @@ class MergingIterator : public Iterator {
   void PopCurrentComparison();
   void PushCurrentComparison();
  public:
-  MergingIterator(const Comparator* comparator, Iterator** children, int n)
+  MergingIterator(const Comparator* comparator, Iterator** children, int n, Timer* timer)
       : comparator_(comparator),
         children_(new IteratorWrapper[n]),
         comparisons_(new uint64_t[n]),
@@ -43,7 +57,8 @@ class MergingIterator : public Iterator {
         comparisons_intialized_(false),
         current_(NULL),
         status_(),
-        direction_(kForward) {
+        direction_(kForward),
+		timer_(timer) {
     for (int i = 0; i < n; i++) {
       children_[i].Set(children[i]);
     }
@@ -79,15 +94,20 @@ class MergingIterator : public Iterator {
   }
 
   virtual void Seek(const Slice& target) {
+	start_timer2(SEEK_SEQUENTIAL_TOTAL, n_);
     for (int i = 0; i < n_; i++) {
       children_[i].Seek(target);
     }
+	record_timer2(SEEK_SEQUENTIAL_TOTAL, n_);
     direction_ = kForward;
+    start_timer(SEEK_REINIT);
     ReinitializeComparisons();
     FindSmallest();
+    record_timer(SEEK_REINIT);
   }
 
   virtual void Next() {
+	start_timer(SEEK_NEXT);
     assert(Valid());
 
     // Ensure that all children are positioned after key().
@@ -114,6 +134,7 @@ class MergingIterator : public Iterator {
     current_->Next();
     PushCurrentComparison();
     FindSmallest();
+	record_timer(SEEK_NEXT);
   }
 
   virtual void Prev() {
@@ -184,6 +205,7 @@ class MergingIterator : public Iterator {
   bool comparisons_intialized_;
   IteratorWrapper* current_;
   Status status_;
+  Timer* timer_;
 
   // Which direction is the iterator moving?
   enum Direction {
@@ -254,14 +276,14 @@ void MergingIterator::FindLargest() {
 }
 }  // namespace
 
-Iterator* NewMergingIterator(const Comparator* cmp, Iterator** list, int n) {
+Iterator* NewMergingIterator(const Comparator* cmp, Iterator** list, int n, Timer* timer) {
   assert(n >= 0);
   if (n == 0) {
     return NewEmptyIterator();
   } else if (n == 1) {
     return list[0];
   } else {
-    return new MergingIterator(cmp, list, n);
+    return new MergingIterator(cmp, list, n, timer);
   }
 }
 
