@@ -36,6 +36,7 @@
 #include "util/coding.h"
 #include "util/logging.h"
 #include "util/mutexlock.h"
+#include "util/timer.h"
 
 #include <iostream>
 
@@ -226,7 +227,10 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
   num_bg_threads_ = 2;
 
   // Reserve ten files or so for other uses and give the rest to TableCache.
-  const int table_cache_size = options_.max_open_files - kNumNonTableCacheFiles;
+  // HACK ! Hard-coding max open files here
+//  int max_open_files = 64;
+  int max_open_files = options_.max_open_files;
+  const int table_cache_size = max_open_files - kNumNonTableCacheFiles;
 //  printf("Creating table_cache of size %d\n", table_cache_size);
   table_cache_ = new TableCache(dbname_, &options_, table_cache_size);
   timer = new Timer();
@@ -1394,6 +1398,10 @@ Status DBImpl::Get(const ReadOptions& options,
 }
 
 Status DBImpl::GetCurrentVersionState(std::string* value) {
+	if (versions_ == NULL) {
+		printf("versions_ is NULL !!\n");
+		return Status::OK();
+	}
 	std::string version_debug_string = versions_->current()->DebugString();
 	*value = version_debug_string;
 	return Status::OK();

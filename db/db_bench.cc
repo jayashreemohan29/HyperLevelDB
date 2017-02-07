@@ -689,6 +689,10 @@ class Benchmark {
   void print_current_db_contents() {
 	  std::string current_db_state;
 	  printf("----------------------Current DB state-----------------------\n");
+	  if (db_ == NULL) {
+		printf("db_ is NULL !!\n");
+		return;
+	  }
 	  db_->GetCurrentVersionState(&current_db_state);
 	  printf("%s\n", current_db_state.c_str());
 	  printf("-------------------------------------------------------------\n");
@@ -708,6 +712,7 @@ class Benchmark {
     	}
     	print_current_db_contents();
     	YCSB();
+    	db_->PrintTimerAudit();
     	print_current_db_contents();
     	return;
     }

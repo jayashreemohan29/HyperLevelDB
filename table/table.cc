@@ -14,10 +14,11 @@
 #include "table/format.h"
 #include "table/two_level_iterator.h"
 #include "util/coding.h"
+#include "util/timer.h"
 
 #ifdef TIMER_LOG
-	#define start_timer(s) timer->StartTimer(s)
-	#define record_timer(s) timer->Record(s)
+	#define start_timer(s) if (timer != NULL) timer->StartTimer(s)
+	#define record_timer(s) if (timer != NULL) timer->Record(s)
 #else
 	#define start_timer(s1)
 	#define record_timer(s1)
@@ -60,7 +61,8 @@ struct Table::Rep {
 Status Table::Open(const Options& options,
                    RandomAccessFile* file,
                    uint64_t size,
-                   Table** table) {
+                   Table** table,
+				   Timer* timer) {
   *table = NULL;
   if (size < Footer::kEncodedLength) {
     return Status::InvalidArgument("file is too short to be an sstable");
@@ -68,8 +70,10 @@ Status Table::Open(const Options& options,
 
   char footer_space[Footer::kEncodedLength];
   Slice footer_input;
+  start_timer(GET_TABLE_CACHE_GET_TABLE_OPEN_FOOTER_READ);
   Status s = file->Read(size - Footer::kEncodedLength, Footer::kEncodedLength,
                         &footer_input, footer_space);
+  record_timer(GET_TABLE_CACHE_GET_TABLE_OPEN_FOOTER_READ);
   if (!s.ok()) return s;
 
   Footer footer;
@@ -80,7 +84,9 @@ Status Table::Open(const Options& options,
   BlockContents contents;
   Block* index_block = NULL;
   if (s.ok()) {
-    s = ReadBlock(file, ReadOptions(), footer.index_handle(), &contents);
+	start_timer(GET_TABLE_CACHE_GET_TABLE_OPEN_INDEX_BLOCK_READ);
+	s = ReadBlock(file, ReadOptions(), footer.index_handle(), &contents);
+	record_timer(GET_TABLE_CACHE_GET_TABLE_OPEN_INDEX_BLOCK_READ);
     if (s.ok()) {
       index_block = new Block(contents);
     }
@@ -98,7 +104,9 @@ Status Table::Open(const Options& options,
     rep->filter_data = NULL;
     rep->filter = NULL;
     *table = new Table(rep);
+	start_timer(GET_TABLE_CACHE_GET_TABLE_OPEN_READ_META);
     (*table)->ReadMeta(footer);
+	record_timer(GET_TABLE_CACHE_GET_TABLE_OPEN_READ_META);
   } else {
     if (index_block) delete index_block;
   }

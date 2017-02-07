@@ -62,7 +62,9 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
     std::string fname = TableFileName(dbname_, file_number);
     RandomAccessFile* file = NULL;
     Table* table = NULL;
-    s = env_->NewRandomAccessFile(fname, &file);
+	start_timer(GET_TABLE_CACHE_GET_NEW_RANDOM_ACCESS_FILE);
+	s = env_->NewRandomAccessFile(fname, &file);
+	record_timer(GET_TABLE_CACHE_GET_NEW_RANDOM_ACCESS_FILE);
     if (!s.ok()) {
       std::string old_fname = LDBTableFileName(dbname_, file_number);
       if (env_->NewRandomAccessFile(old_fname, &file).ok()) {
@@ -70,7 +72,9 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
       }
     }
     if (s.ok()) {
-      s = Table::Open(*options_, file, file_size, &table);
+		start_timer(GET_TABLE_CACHE_GET_TABLE_OPEN);
+		s = Table::Open(*options_, file, file_size, &table, timer);
+		record_timer(GET_TABLE_CACHE_GET_TABLE_OPEN);
     }
 
     if (!s.ok()) {
@@ -82,7 +86,9 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
       TableAndFile* tf = new TableAndFile;
       tf->file = file;
       tf->table = table;
-      *handle = cache_->Insert(key, tf, 1, &DeleteEntry);
+		start_timer(GET_TABLE_CACHE_GET_INSERT_INTO_CACHE);
+		*handle = cache_->Insert(key, tf, 1, &DeleteEntry);
+		record_timer(GET_TABLE_CACHE_GET_INSERT_INTO_CACHE);
     }
     record_timer(GET_TABLE_CACHE_GET_FROM_DISK);
   }
