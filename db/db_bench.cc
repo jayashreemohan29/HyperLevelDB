@@ -1326,8 +1326,8 @@ class Benchmark {
 int main(int argc, char** argv) {
   FLAGS_write_buffer_size = leveldb::Options().write_buffer_size;
   FLAGS_open_files = leveldb::Options().max_open_files;
-  FLAGS_open_files = 64;
-//  FLAGS_open_files = 1000;
+//  FLAGS_open_files = 64;
+  FLAGS_open_files = 1000;
   std::string default_db_path;
 
   for (int i = 1; i < argc; i++) {
