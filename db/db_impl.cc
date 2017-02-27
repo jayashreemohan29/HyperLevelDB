@@ -1856,6 +1856,11 @@ void DBImpl::WaitOutWriters() {
 bool DBImpl::GetProperty(const Slice& property, std::string* value) {
   value->clear();
 
+  if (versions_ == NULL) {
+	  value->append("versions_ is NULL!!");
+	  return false;
+  }
+
   MutexLock l(&mutex_);
   Slice in = property;
   Slice prefix("leveldb.");

@@ -29,7 +29,7 @@
 #include "util/random.h"
 #include "util/testutil.h"
 
-#define MAX_TRACE_OPS 50000000
+#define MAX_TRACE_OPS 100000000
 #define MAX_VALUE_SIZE (1024 * 1024)
 #define sassert(X) {if (!(X)) std::cerr << "\n\n\n\n" << status.ToString() << "\n\n\n\n"; assert(X);}
 
@@ -823,8 +823,16 @@ class Benchmark {
         } else {
           delete db_;
           db_ = NULL;
+//          printf("Bench:: Destroying DB..\n");
           DestroyDB(FLAGS_db, Options());
+//          printf("DB destroyed..\n");
+//          Env::Default()->SleepForMicroseconds(5000000);
+//          printf("Bench:: Opening DB again.. \n");
+//          Env::Default()->SleepForMicroseconds(5000000);
           Open();
+//          printf("Bench:: DB opened again..\n");
+//          DestroyDB(FLAGS_db, Options());
+//          Open();
         }
       }
 
@@ -1293,7 +1301,7 @@ class Benchmark {
 
   void PrintStats(const char* key) {
     std::string stats;
-    if (!db_->GetProperty(key, &stats)) {
+    if (db_ == NULL || !db_->GetProperty(key, &stats)) {
       stats = "(failed)";
     }
     fprintf(stdout, "\n%s\n", stats.c_str());
