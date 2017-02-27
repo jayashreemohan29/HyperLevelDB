@@ -24,6 +24,7 @@
 #include "port/port.h"
 #include "port/thread_annotations.h"
 #include "util/timer.h"
+#include "db/version_set.h"
 
 namespace leveldb {
 #ifdef _LIBCPP_VERSION
@@ -127,7 +128,7 @@ class DBImpl : public DB {
                         SequenceNumber* max_sequence)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
-  Status WriteLevel0Table(MemTable* mem, VersionEdit* edit, Version* base, uint64_t* number)
+  Status WriteLevel0Table(MemTable* mem, VersionEdit* edit, Version* base, uint64_t* number, FileLevelFilterBuilder* file_level_filter_builder)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   Status SequenceWriteBegin(Writer* w, WriteBatch* updates)
@@ -140,16 +141,16 @@ class DBImpl : public DB {
   static void CompactLevelWrapper(void* db)
   { reinterpret_cast<DBImpl*>(db)->CompactLevelThread(); }
   void CompactLevelThread();
-  Status BackgroundCompaction() EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  Status BackgroundCompaction(FileLevelFilterBuilder* file_level_filter_builder) EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   void RecordBackgroundError(const Status& s);
 
   void CleanupCompaction(CompactionState* compact)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
-  Status DoCompactionWork(CompactionState* compact)
+  Status DoCompactionWork(CompactionState* compact, FileLevelFilterBuilder* file_level_filter_builder)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   Status OpenCompactionOutputFile(CompactionState* compact);
-  Status FinishCompactionOutputFile(CompactionState* compact, Iterator* input);
+  Status FinishCompactionOutputFile(CompactionState* compact, Iterator* input, FileLevelFilterBuilder* file_level_filter_builder);
   Status InstallCompactionResults(CompactionState* compact)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 

@@ -6,6 +6,7 @@
 #define STORAGE_LEVELDB_DB_BUILDER_H_
 
 #include "hyperleveldb/status.h"
+#include "db/version_set.h"
 
 namespace leveldb {
 
@@ -27,7 +28,9 @@ extern Status BuildTable(const std::string& dbname,
                          const Options& options,
                          TableCache* table_cache,
                          Iterator* iter,
-                         FileMetaData* meta);
+                         FileMetaData* meta,
+						 FileLevelFilterBuilder* file_level_filter_builder,
+						 VersionSet* versions_);
 
 }  // namespace leveldb
 

@@ -466,6 +466,22 @@ Status Version::Get(const ReadOptions& options,
       last_file_read = f;
       last_file_read_level = level;
 
+      bool key_may_match = true;
+
+      std::string* filter_string = vset_->file_level_bloom_filter[f->number];
+//      std::string* filter_string = NULL;
+      if (filter_string != NULL) {
+//    	  printf ("Checking filter of length %d for file %lu \n", filter_string->length(), f->number);
+		  vstart_timer(GET_FILE_LEVEL_FILTER_CHECK, BEGIN, 1);
+		  Slice filter_slice = Slice(filter_string->data(), filter_string->size());
+		  key_may_match = vset_->options_->filter_policy->KeyMayMatch(ikey, filter_slice);
+		  vrecord_timer(GET_FILE_LEVEL_FILTER_CHECK, BEGIN, 1);
+		  if (!key_may_match) {
+//			  printf("Saved by file level bloom filter..\n");
+			  continue;
+		  }
+      }
+
       vstart_timer(GET_FILE_LEVEL_FILTER_CHECK, BEGIN, 1);
       vrecord_timer(GET_FILE_LEVEL_FILTER_CHECK, BEGIN, 1);
       Saver saver;
@@ -484,6 +500,7 @@ Status Version::Get(const ReadOptions& options,
       }
       switch (saver.state) {
         case kNotFound:
+//          printf("File level bloom filter false positive..\n");
           break;      // Keep searching in other files
         case kFound:
           return s;
@@ -878,13 +895,121 @@ VersionSet::VersionSet(const std::string& dbname,
       current_(NULL),
       timer(timer) {
   AppendVersion(new Version(this));
+
+#ifdef FILE_LEVEL_FILTER
+  PopulateFileLevelBloomFilter();
+#endif
 }
 
 VersionSet::~VersionSet() {
+  for (std::map<uint64_t, std::string*>::iterator it = file_level_bloom_filter.begin(); it != file_level_bloom_filter.end(); ++it) {
+	  std::string* filter_string = (*it).second;
+	  if (filter_string != NULL) {
+		  delete filter_string;
+	  }
+  }
   current_->Unref();
   assert(dummy_versions_.next_ == &dummy_versions_);  // List must be empty
   delete descriptor_log_;
   delete descriptor_file_;
+}
+
+void VersionSet::PopulateFileLevelBloomFilter() {
+
+//	printf("Populating File level Bloom filter . . .\n");
+//	env_->SleepForMicroseconds(5000000);
+	// TODO de-couple file level bloom filter from block level bloom filter
+    const FilterPolicy *filter_policy = options_->filter_policy;
+    FileLevelFilterBuilder file_level_filter_builder(filter_policy);
+
+    Version* current = current_;
+	current->Ref();
+	for (int i = 0; i < config::kNumLevels; i++) {
+		for (int j = 0; j < current->files_[i].size(); j++) {
+			PopulateBloomFilterForFile(current->files_[i][j], &file_level_filter_builder);
+		}
+	}
+//	delete file_level_filter_builder;
+//	printf("File level Bloom filter populated.\n");
+//	env_->SleepForMicroseconds(5000000);
+	file_level_filter_builder.Destroy();
+	current->Unref();
+//	printf("File level filter builder destroyed.\n");
+//	env_->SleepForMicroseconds(5000000);
+
+/*	printf("Trying to destroy the file level BF for all files..\n");
+	env_->SleepForMicroseconds(5000000);
+    current = current_;
+	current->Ref();
+	for (int i = 0; i < config::kNumLevels; i++) {
+		for (int j = 0; j < current->files_[i].size(); j++) {
+			RemoveFileLevelBloomFilterInfo(current->files_[i][j]->number);
+		}
+	}
+//	delete file_level_filter_builder;
+	printf("File level Bloom filter destroyed for all files.\n");
+	env_->SleepForMicroseconds(10000000);
+	current->Unref();*/
+}
+
+void VersionSet::PopulateBloomFilterForFile(FileMetaData* file, FileLevelFilterBuilder* file_level_filter_builder) {
+//	printf("VersionSet :: Populating Bloom filter for file %llu \n", file->number);
+	uint64_t file_number = file->number;
+	uint64_t file_size = file->file_size;
+
+	if (file_level_bloom_filter[file_number] != NULL) {
+		// This means that we have already calculated the bloom filter for this file and files are immutable (wrt a file number)
+		return;
+	}
+
+    Iterator* iter = table_cache_->NewIterator(ReadOptions(), file_number, file_size);
+    iter->SeekToFirst();
+//    int num_entries = 0;
+//    std::vector<Slice> keys;
+    int index = 0;
+    while (iter->Valid()) {
+//    	num_entries++;
+    	file_level_filter_builder->AddKey(iter->key());
+//    	filter_key_strings[index].assign(iter->key().ToString());
+//    	filter_keys[index].set_data(filter_key_strings[index]);
+    	index++;
+//    	keys.push_back(iter->key());
+    	iter->Next();
+    }
+    std::string* filter_string = file_level_filter_builder->GenerateFilter();
+    assert (filter_string != NULL);
+//    filter_policy->CreateFilter(filter_keys, index, filter_string);
+//    printf("DEBUG :: (Initialize) Creating new string of size %llu for filter_string for file %llu\n", filter_string->length(), file_number);
+    delete iter;
+    AddFileLevelBloomFilterInfo(file_number, filter_string);
+
+//    file_level_bloom_filter[file_number].assign(filter_string);
+}
+
+void VersionSet::InitializeFileLevelBloomFilter() {
+#ifdef FILE_LEVEL_FILTER
+	PopulateFileLevelBloomFilter();
+#endif
+}
+
+void VersionSet::AddFileLevelBloomFilterInfo(uint64_t file_number, std::string* filter_string) {
+#ifdef FILE_LEVEL_FILTER
+	file_level_bloom_filter[file_number] = filter_string;
+#endif
+}
+void VersionSet::RemoveFileLevelBloomFilterInfo(uint64_t file_number) {
+#ifdef FILE_LEVEL_FILTER
+//	printf("Removing bloom filter for file %lld from memory.. ", file_number);
+	std::string* filter = file_level_bloom_filter[file_number];
+	if (filter != NULL) {
+//		printf("size of filter being freed: %d", filter->length());
+//		filter->clear();
+//		filter->shrink_to_fit();
+		delete filter;
+	}
+//	printf("\n");
+	file_level_bloom_filter.erase(file_number);
+#endif
 }
 
 #pragma GCC diagnostic pop

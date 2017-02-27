@@ -23,6 +23,9 @@
 #include "port/port.h"
 #include "port/thread_annotations.h"
 #include "util/timer.h"
+#include "table/filter_block.h"
+
+#define FILE_LEVEL_FILTER
 
 namespace leveldb {
 
@@ -34,6 +37,7 @@ class Iterator;
 class MemTable;
 class TableBuilder;
 class TableCache;
+class FileLevelFilterBuilder;
 class Version;
 class VersionSet;
 class ConcurrentWritableFile;
@@ -283,6 +287,12 @@ class VersionSet {
   const char* LevelSummary(LevelSummaryStorage* scratch) const;
   Timer* timer;
 
+  void PopulateFileLevelBloomFilter();
+  void PopulateBloomFilterForFile(FileMetaData* file, FileLevelFilterBuilder* file_level_filter_builder);
+  void AddFileLevelBloomFilterInfo(uint64_t file_number, std::string* filter_string);
+  void RemoveFileLevelBloomFilterInfo(uint64_t file_number);
+  void InitializeFileLevelBloomFilter();
+
  private:
   class Builder;
 
@@ -335,6 +345,7 @@ class VersionSet {
   // Per-level key at which the next compaction at that level should start.
   // Either an empty string, or a valid InternalKey.
   std::string compact_pointer_[config::kNumLevels];
+  std::map<uint64_t, std::string*> file_level_bloom_filter;
 
   // No copying allowed
   VersionSet(const VersionSet&);

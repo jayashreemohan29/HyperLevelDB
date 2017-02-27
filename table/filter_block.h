@@ -21,6 +21,29 @@ namespace leveldb {
 
 class FilterPolicy;
 
+class FileLevelFilterBuilder {
+ public:
+  explicit FileLevelFilterBuilder(const FilterPolicy*);
+  ~FileLevelFilterBuilder();
+
+  void AddKey(const Slice& key);
+  void Clear();
+  void Destroy();
+  std::string* GenerateFilter();
+
+ private:
+
+  const FilterPolicy* policy_;
+  StringBuilder keys_;            // Flattened key contents
+//  std::vector<Slice> keys_vec_;
+  std::vector<size_t> key_offsets_;     // Starting index in keys_ of each key
+  std::vector<Slice> tmp_keys_;   // policy_->CreateFilter() argument
+
+  // No copying allowed
+  FileLevelFilterBuilder(const FileLevelFilterBuilder&);
+  void operator=(const FileLevelFilterBuilder&);
+};
+
 // A FilterBlockBuilder is used to construct all of the filters for a
 // particular Table.  It generates a single string which is stored as
 // a special block in the Table.

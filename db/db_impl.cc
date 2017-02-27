@@ -541,6 +541,8 @@ Status DBImpl::RecoverLogFile(uint64_t log_number,
   Log(options_.info_log, "Recovering log #%llu",
       (unsigned long long) log_number);
 
+  FileLevelFilterBuilder file_level_filter_builder(options_.filter_policy);
+
   // Read all the records and add to a memtable
   std::string scratch;
   Slice record;
@@ -572,7 +574,7 @@ Status DBImpl::RecoverLogFile(uint64_t log_number,
     }
 
     if (mem->ApproximateMemoryUsage() > options_.write_buffer_size) {
-      status = WriteLevel0Table(mem, edit, NULL, NULL);
+      status = WriteLevel0Table(mem, edit, NULL, NULL, &file_level_filter_builder);
       if (!status.ok()) {
         // Reflect errors immediately so that conditions like full
         // file-systems cause the DB::Open() to fail.
@@ -584,18 +586,20 @@ Status DBImpl::RecoverLogFile(uint64_t log_number,
   }
 
   if (status.ok() && mem != NULL) {
-    status = WriteLevel0Table(mem, edit, NULL, NULL);
+    status = WriteLevel0Table(mem, edit, NULL, NULL, &file_level_filter_builder);
     // Reflect errors immediately so that conditions like full
     // file-systems cause the DB::Open() to fail.
   }
 
+  file_level_filter_builder.Destroy();
   if (mem != NULL) mem->Unref();
   delete file;
   return status;
 }
 
 Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
-                                Version* base, uint64_t* number) {
+                                Version* base, uint64_t* number,
+								FileLevelFilterBuilder* file_level_filter_builder) {
   mutex_.AssertHeld();
   const uint64_t start_micros = env_->NowMicros();
   FileMetaData meta;
@@ -612,7 +616,7 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   {
     mutex_.Unlock();
     start_timer(BUILD_LEVEL0_TABLES);
-    s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta);
+    s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta, file_level_filter_builder, versions_);
     record_timer(BUILD_LEVEL0_TABLES);
 
 
@@ -654,6 +658,7 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
 
 void DBImpl::CompactMemTableThread() {
   MutexLock l(&mutex_);
+  FileLevelFilterBuilder file_level_filter_builder(options_.filter_policy);
   while (!shutting_down_.Acquire_Load() && !allow_background_activity_) {
     bg_memtable_cv_.Wait();
   }
@@ -672,7 +677,7 @@ void DBImpl::CompactMemTableThread() {
     base->Ref();
     uint64_t number;
     start_timer(WRITE_LEVEL0_TABLE_GUARDS);
-    Status s = WriteLevel0Table(imm_, &edit, base, &number);
+    Status s = WriteLevel0Table(imm_, &edit, base, &number, &file_level_filter_builder);
     record_timer(WRITE_LEVEL0_TABLE_GUARDS);
     base->Unref(); base = NULL;
 
@@ -801,6 +806,7 @@ Status DBImpl::TEST_CompactMemTable() {
 
 void DBImpl::CompactLevelThread() {
   MutexLock l(&mutex_);
+  FileLevelFilterBuilder file_level_filter_builder(options_.filter_policy);
   uint64_t a, b, c;
   while (!shutting_down_.Acquire_Load() && !allow_background_activity_) {
     bg_compaction_cv_.Wait();
@@ -817,7 +823,7 @@ void DBImpl::CompactLevelThread() {
 
     assert(manual_compaction_ == NULL || num_bg_threads_ == 2);
     start_timer(TOTAL_BACKGROUND_COMPACTION);
-    Status s = BackgroundCompaction();
+    Status s = BackgroundCompaction(&file_level_filter_builder);
     record_timer(TOTAL_BACKGROUND_COMPACTION);
     bg_fg_cv_.SignalAll(); // before the backoff In case a waiter
                            // can proceed despite the error
@@ -853,7 +859,7 @@ void DBImpl::RecordBackgroundError(const Status& s) {
   }
 }
 
-Status DBImpl::BackgroundCompaction() {
+Status DBImpl::BackgroundCompaction(FileLevelFilterBuilder* file_level_filter_builder) {
 //  printf("BackgroundCompaction:: Starting background compaction\n");
   mutex_.AssertHeld();
   Compaction* c = NULL;
@@ -920,7 +926,7 @@ Status DBImpl::BackgroundCompaction() {
     CompactionState* compact = new CompactionState(c);
 
     start_timer(BGC_DO_COMPACTION_WORK_GUARDS);
-    status = DoCompactionWork(compact);
+    status = DoCompactionWork(compact, file_level_filter_builder);
     record_timer(BGC_DO_COMPACTION_WORK_GUARDS);
 
     if (!status.ok()) {
@@ -1008,7 +1014,8 @@ Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
 }
 
 Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
-                                          Iterator* input) {
+                                          Iterator* input,
+										  FileLevelFilterBuilder* file_level_filter_builder) {
   assert(compact != NULL);
   assert(compact->outfile != NULL);
   assert(compact->builder != NULL);
@@ -1039,6 +1046,13 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   }
   delete compact->outfile;
   compact->outfile = NULL;
+
+#ifdef FILE_LEVEL_FILTER
+  std::string* filter_string = file_level_filter_builder->GenerateFilter();
+  assert (filter_string != NULL);
+  versions_->AddFileLevelBloomFilterInfo(output_number, filter_string);
+  file_level_filter_builder->Clear();
+#endif
 
   if (s.ok() && current_entries > 0) {
     // Verify that the table is usable
@@ -1080,7 +1094,7 @@ Status DBImpl::InstallCompactionResults(CompactionState* compact) {
   return versions_->LogAndApply(compact->compaction->edit(), &mutex_, &bg_log_cv_, &bg_log_occupied_, 0);
 }
 
-Status DBImpl::DoCompactionWork(CompactionState* compact) {
+Status DBImpl::DoCompactionWork(CompactionState* compact, FileLevelFilterBuilder* file_level_filter_builder) {
   const uint64_t start_micros = env_->NowMicros();
   int64_t imm_micros = 0;  // Micros spent doing imm_ compactions
 
@@ -1136,7 +1150,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
             compact->compaction->MinOutputFileSize() &&
             compact->compaction->CrossesBoundary(current_key, ikey, &boundary_hint)) {
           start_timer(BGC_FINISH_COMPACTION_OUTPUT_FILE);
-          status = FinishCompactionOutputFile(compact, input);
+          status = FinishCompactionOutputFile(compact, input, file_level_filter_builder);
           record_timer(BGC_FINISH_COMPACTION_OUTPUT_FILE);
           if (!status.ok()) {
             break;
@@ -1196,12 +1210,15 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       }
       compact->current_output()->largest.DecodeFrom(key);
       compact->builder->Add(key, input->value());
+#ifdef FILE_LEVEL_FILTER
+      file_level_filter_builder->AddKey(key);
+#endif
 
       // Close output file if it is big enough
       if (compact->builder->FileSize() >=
           compact->compaction->MaxOutputFileSize()) {
     	start_timer(BGC_FINISH_COMPACTION_OUTPUT_FILE);
-        status = FinishCompactionOutputFile(compact, input);
+        status = FinishCompactionOutputFile(compact, input, file_level_filter_builder);
         record_timer(BGC_FINISH_COMPACTION_OUTPUT_FILE);
         if (!status.ok()) {
           break;
@@ -1218,7 +1235,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   }
   if (status.ok() && compact->builder != NULL) {
 	start_timer(BGC_FINISH_COMPACTION_OUTPUT_FILE);
-    status = FinishCompactionOutputFile(compact, input);
+    status = FinishCompactionOutputFile(compact, input, file_level_filter_builder);
     record_timer(BGC_FINISH_COMPACTION_OUTPUT_FILE);
   }
   if (status.ok()) {
@@ -2118,6 +2135,9 @@ Status DB::Open(const Options& options, const std::string& dbname,
       impl->bg_memtable_cv_.Signal();
     }
   }
+
+  impl->versions_->InitializeFileLevelBloomFilter();
+
   impl->pending_outputs_.clear();
   impl->allow_background_activity_ = true;
   impl->bg_compaction_cv_.SignalAll();

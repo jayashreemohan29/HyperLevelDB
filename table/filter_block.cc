@@ -9,6 +9,78 @@
 
 namespace leveldb {
 
+FileLevelFilterBuilder::FileLevelFilterBuilder(const FilterPolicy* policy) {
+//	printf("Before assigning policy..\n");
+//	Env::Default()->SleepForMicroseconds(5000000);
+	this->policy_ = policy;
+//	printf("After assigning policy..\n");
+//	Env::Default()->SleepForMicroseconds(5000000);
+//	printf("keys_ size: %d, key_offsets_ size: %d key_offsets_ capacity: %d tmp_keys_ size: %d tmp_keys_ capacity: %d\n", keys_.size(), key_offsets_.size(), key_offsets_.capacity(), tmp_keys_.size(), tmp_keys_.capacity());
+	Clear();
+//	keys_.init_buffer(SIZE_FOR_FILTER_KEYS);
+//	printf("End of constructor..\n");
+//	Env::Default()->SleepForMicroseconds(5000000);
+
+//	printf("After clearing..\nkeys_ size: %d, key_offsets_ size: %d key_offsets_ capacity: %d tmp_keys_ size: %d tmp_keys_ capacity: %d\n", keys_.size(), key_offsets_.size(), key_offsets_.capacity(), tmp_keys_.size(), tmp_keys_.capacity());
+}
+
+FileLevelFilterBuilder::~FileLevelFilterBuilder() {
+	Destroy();
+}
+
+void FileLevelFilterBuilder::Destroy() {
+//	printf("Destroying memory for file level filter builder..\n");
+	std::vector<Slice>().swap(tmp_keys_);
+	std::vector<size_t>().swap(key_offsets_);
+	keys_.destroy_memory();
+}
+
+void FileLevelFilterBuilder::Clear() {
+	keys_.clear();
+	key_offsets_.clear();
+//	keys_vec_.clear();
+//	std::vector<size_t>().swap(key_offsets_);
+	tmp_keys_.clear();
+//	std::vector<Slice>().swap(tmp_keys_);
+}
+
+void FileLevelFilterBuilder::AddKey(const Slice& key) {
+	Slice k = key;
+	key_offsets_.push_back(keys_.size());
+	keys_.append(k.data(), k.size());
+}
+
+std::string* FileLevelFilterBuilder::GenerateFilter() {
+//	printf("GenerateFilter:: tmp_keys size: %d key_offsets size: %d result size: %d keys_ size: %d\n", tmp_keys_.size(), key_offsets_.size(), 0, keys_.size());
+//	Clear();
+//	return NULL;
+
+	std::string* result = new std::string;
+	const size_t num_keys = key_offsets_.size();
+	if (num_keys == 0) {
+	  delete result;
+	  Clear();
+	  return NULL;
+	}
+
+	// Make list of keys from flattened key structure
+	key_offsets_.push_back(keys_.size());  // Simplify length computation
+	tmp_keys_.resize(num_keys);
+	for (size_t i = 0; i < num_keys; i++) {
+	  const char* base = keys_.data() + key_offsets_[i];
+	  size_t length = key_offsets_[i+1] - key_offsets_[i];
+	  tmp_keys_[i] = Slice(base, length);
+	}
+
+	// Generate filter for current set of keys and append to result_.
+//	printf("Before generating filter - result pointer: %p\n", (void*) result);
+	policy_->CreateFilter(&tmp_keys_[0], num_keys, result);
+//	printf("GenerateFilter:: tmp_keys size: %d key_offsets size: %d result size: %d keys_ size: %d\n", tmp_keys_.size(), key_offsets_.size(), result->length(), keys_.size());
+
+	Clear();
+	return result;
+}
+
 // See doc/table_format.txt for an explanation of the filter block format.
 
 // Generate new filter every 2KB of data

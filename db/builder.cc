@@ -19,7 +19,9 @@ Status BuildTable(const std::string& dbname,
                   const Options& options,
                   TableCache* table_cache,
                   Iterator* iter,
-                  FileMetaData* meta) {
+                  FileMetaData* meta,
+				  FileLevelFilterBuilder* file_level_filter_builder,
+				  VersionSet* versions_) {
   Status s;
   meta->file_size = 0;
   iter->SeekToFirst();
@@ -38,6 +40,12 @@ Status BuildTable(const std::string& dbname,
       Slice key = iter->key();
       meta->largest.DecodeFrom(key);
       builder->Add(key, iter->value());
+
+#ifdef FILE_LEVEL_FILTER
+      if (file_level_filter_builder != NULL) {
+    	  file_level_filter_builder->AddKey(key);
+      }
+#endif
     }
 
     // Finish and check for builder errors
@@ -71,6 +79,15 @@ Status BuildTable(const std::string& dbname,
       delete it;
     }
   }
+
+#ifdef FILE_LEVEL_FILTER
+  if (file_level_filter_builder != NULL && versions_ != NULL) {
+	  std::string* filter_string = file_level_filter_builder->GenerateFilter();
+	  assert (filter_string != NULL);
+	  versions_->AddFileLevelBloomFilterInfo(meta->number, filter_string);
+	  file_level_filter_builder->Clear();
+  }
+#endif
 
   // Check for input iterator errors
   if (!iter->status().ok()) {

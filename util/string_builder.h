@@ -19,6 +19,24 @@ struct StringBuilder {
   }
   ~StringBuilder() throw () { if (m_buf) free(m_buf); }
 
+  void destroy_memory() {
+	  if (m_buf) {
+		  free(m_buf);
+		  m_buf = NULL;
+		  m_sz = 0;
+		  m_cap = 0;
+	  }
+  }
+
+  void init_buffer(int size) {
+	  if (m_buf) {
+		  free(m_buf);
+	  }
+	  m_buf = static_cast<char*> (malloc(size));
+	  m_cap = m_buf ? size: 0;
+	  m_sz = 0;
+  }
+
   void clear() { m_sz = 0; }
   size_t size() const { return m_sz; }
   bool empty() const { return size() == 0; }
