@@ -1031,7 +1031,7 @@ void VersionSet::AppendVersion(Version* v) {
   v->next_->prev_ = v;
 }
 
-Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu, port::CondVar* cv, bool* wt, int mtc = 0) {
+Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu, port::CondVar* cv, bool* wt, std::vector<uint64_t> file_numbers, std::vector<std::string*> file_level_filters, int mtc = 0) {
   while (*wt) {
     cv->Wait();
   }
@@ -1120,6 +1120,12 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu, port::CondVar
     start_timer(MTC_LAA_GET_LOCK_AFTER_MANIFEST_SYNC, BGC_LAA_GET_LOCK_AFTER_MANIFEST_SYNC, mtc);
     mu->Lock();
     record_timer(MTC_LAA_GET_LOCK_AFTER_MANIFEST_SYNC, BGC_LAA_GET_LOCK_AFTER_MANIFEST_SYNC, mtc);
+  }
+
+  // Store file level filter strings to map
+  assert (file_numbers.size() == file_level_filters.size());
+  for (int i = 0; i < file_numbers.size(); i++) {
+	  AddFileLevelBloomFilterInfo(file_numbers[i], file_level_filters[i]);
   }
 
   // Install the new version

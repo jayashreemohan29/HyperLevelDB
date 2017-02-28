@@ -30,7 +30,8 @@ extern Status BuildTable(const std::string& dbname,
                          Iterator* iter,
                          FileMetaData* meta,
 						 FileLevelFilterBuilder* file_level_filter_builder,
-						 VersionSet* versions_);
+						 VersionSet* versions_,
+						 std::string** filter_string_ptr);
 
 }  // namespace leveldb
 

@@ -128,7 +128,7 @@ class DBImpl : public DB {
                         SequenceNumber* max_sequence)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
-  Status WriteLevel0Table(MemTable* mem, VersionEdit* edit, Version* base, uint64_t* number, FileLevelFilterBuilder* file_level_filter_builder)
+  Status WriteLevel0Table(MemTable* mem, VersionEdit* edit, Version* base, uint64_t* number, FileLevelFilterBuilder* file_level_filter_builder, std::string** filter_string_ptr)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   Status SequenceWriteBegin(Writer* w, WriteBatch* updates)
@@ -150,8 +150,8 @@ class DBImpl : public DB {
   Status DoCompactionWork(CompactionState* compact, FileLevelFilterBuilder* file_level_filter_builder)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   Status OpenCompactionOutputFile(CompactionState* compact);
-  Status FinishCompactionOutputFile(CompactionState* compact, Iterator* input, FileLevelFilterBuilder* file_level_filter_builder);
-  Status InstallCompactionResults(CompactionState* compact)
+  Status FinishCompactionOutputFile(CompactionState* compact, Iterator* input, FileLevelFilterBuilder* file_level_filter_builder, std::string** filter_string_ptr, uint64_t* file_number);
+  Status InstallCompactionResults(CompactionState* compact, std::vector<uint64_t> file_numbers, std::vector<std::string*> file_level_filters)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   // Constant after construction

@@ -21,7 +21,8 @@ Status BuildTable(const std::string& dbname,
                   Iterator* iter,
                   FileMetaData* meta,
 				  FileLevelFilterBuilder* file_level_filter_builder,
-				  VersionSet* versions_) {
+				  VersionSet* versions_,
+				  std::string** filter_string_ptr) {
   Status s;
   meta->file_size = 0;
   iter->SeekToFirst();
@@ -84,7 +85,8 @@ Status BuildTable(const std::string& dbname,
   if (file_level_filter_builder != NULL && versions_ != NULL) {
 	  std::string* filter_string = file_level_filter_builder->GenerateFilter();
 	  assert (filter_string != NULL);
-	  versions_->AddFileLevelBloomFilterInfo(meta->number, filter_string);
+	  *filter_string_ptr = filter_string;
+//	  versions_->AddFileLevelBloomFilterInfo(meta->number, filter_string);
 	  file_level_filter_builder->Clear();
   }
 #endif
