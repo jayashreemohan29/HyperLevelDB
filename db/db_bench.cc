@@ -480,7 +480,7 @@ class Benchmark {
   	unsigned long long key;
   	unsigned long param;
   };
-  struct trace_operation_t *trace_ops;
+  struct trace_operation_t *trace_ops[10]; // Assuming maximum of 10 concurrent threads
 
   struct result_t {
   	unsigned long long ycsbdata;
@@ -497,9 +497,10 @@ class Benchmark {
   	unsigned long long kv_itnext;
   };
 
-  struct result_t result = {};
+  struct result_t results[10];
 
-  unsigned long long print_splitup() {
+  unsigned long long print_splitup(int tid) {
+	struct result_t& result = results[tid];
   	printf("YCSB splitup: R = %llu, D = %llu, I = %llu, U = %llu, S = %llu\n",
   			result.ycsb_r,
   			result.ycsb_d,
@@ -515,7 +516,7 @@ class Benchmark {
   	return result.ycsb_r + result.ycsb_d + result.ycsb_i + result.ycsb_u + result.ycsb_s;
   }
 
-  void parse_trace(const char *file) {
+  void parse_trace(const char *file, int tid) {
   	int ret;
   	char *buf;
   	FILE *fp;
@@ -523,19 +524,19 @@ class Benchmark {
   	struct trace_operation_t *curop = NULL;
   	unsigned long long total_ops = 0;
 
-  	printf("Parsing trace ...\n");
-  	trace_ops = (struct trace_operation_t *) mmap(NULL, MAX_TRACE_OPS * sizeof(struct trace_operation_t),
+  	printf("Thread %d: Parsing trace ...\n", tid);
+  	trace_ops[tid] = (struct trace_operation_t *) mmap(NULL, MAX_TRACE_OPS * sizeof(struct trace_operation_t),
   			PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  	if (trace_ops == MAP_FAILED)
+  	if (trace_ops[tid] == MAP_FAILED)
   		perror(NULL);
-  	assert(trace_ops != MAP_FAILED);
+  	assert(trace_ops[tid] != MAP_FAILED);
 
   	buf = (char *) malloc(bufsize);
   	assert (buf != NULL);
 
   	fp = fopen(file, "r");
   	assert(fp != NULL);
-  	curop = trace_ops;
+  	curop = trace_ops[tid];
   	while((ret = getline(&buf, &bufsize, fp)) > 0) {
   		char tmp[1000];
   		ret = sscanf(buf, "%c %llu %lu\n", &curop->cmd, &curop->key, &curop->param);
@@ -554,12 +555,12 @@ class Benchmark {
   		curop++;
   		total_ops++;
   	}
-  	printf("Done parsing, %llu operations.\n", total_ops);
+  	printf("Thread %d: Done parsing, %llu operations.\n", tid, total_ops);
   }
 
   char valuebuf[MAX_VALUE_SIZE];
 
-  void perform_op(DB *db, struct trace_operation_t *op) {
+  void perform_op(DB *db, struct trace_operation_t *op, int tid) {
   	char keybuf[100];
   	int keylen;
   	Status status;
@@ -569,6 +570,7 @@ class Benchmark {
   	keylen = sprintf(keybuf, "user%llu", op->key);
   	Slice key(keybuf, keylen);
 
+  	struct result_t& result = results[tid];
   	if (op->cmd == 'r') {
   		std::string value;
   		status = db->Get(roptions, key, &value);
@@ -636,12 +638,13 @@ class Benchmark {
   #define envinput(var, type) {assert(getenv(#var)); int ret = sscanf(getenv(#var), type, &var); assert(ret == 1);}
   #define envstrinput(var) strcpy(var, getenv(#var))
 
-  void YCSB() {
+  void YCSB(ThreadState* thread) {
+	int tid = thread->tid;
 	char trace_file[1000];
 
 	envstrinput(trace_file);
 
-	parse_trace(trace_file);
+	parse_trace(trace_file, tid);
 
 	struct rlimit rlim;
 	rlim.rlim_cur = 1000000;
@@ -649,41 +652,43 @@ class Benchmark {
 	int ret;// = setrlimit(RLIMIT_NOFILE, &rlim);
 //	assert(ret == 0);
 
-	struct trace_operation_t *curop = trace_ops;
+	struct trace_operation_t *curop = trace_ops[tid];
 	unsigned long long total_ops = 0;
 	struct timeval start, end;
 
-	printf("Replaying trace ...\n");
+	printf("Thread %d: Replaying trace ...\n", tid);
 
 	gettimeofday(&start, NULL);
 	fprintf(stderr, "\nCompleted 0 ops");
 	fflush(stderr);
 	while(curop->cmd) {
-		perform_op(db_, curop);
+		perform_op(db_, curop, tid);
+		thread->stats.FinishedSingleOp();
 		curop++;
 		total_ops++;
-		if (total_ops % 10000 == 0) {
-			fprintf(stderr, "\rCompleted %llu ops", total_ops);
-		}
+//		if (total_ops % 10000 == 0) {
+//			fprintf(stderr, "\rCompleted %llu ops", total_ops);
+//		}
 	}
 	PrintStats("leveldb.stats");
 	fprintf(stderr, "\r");
 	ret = gettimeofday(&end, NULL);
 	double secs = (end.tv_sec - start.tv_sec) + double(end.tv_usec - start.tv_usec) / 1000000;
 
-	printf("\n\nDone replaying %llu operations.\n", total_ops);
-	unsigned long long splitup_ops = print_splitup();
+	struct result_t& result = results[tid];
+	printf("\n\nThread %d: Done replaying %llu operations.\n", tid, total_ops);
+	unsigned long long splitup_ops = print_splitup(tid);
 	assert(splitup_ops == total_ops);
-	printf("Time taken = %0.3lf seconds\n", secs);
-	printf("Total data: YCSB = %0.6lf GB, HyperLevelDB = %0.6lf GB\n",
+	printf("Thread %d: Time taken = %0.3lf seconds\n", tid, secs);
+	printf("Thread %d: Total data: YCSB = %0.6lf GB, HyperLevelDB = %0.6lf GB\n", tid,
 			double(result.ycsbdata) / 1024.0 / 1024.0 / 1024.0,
 			double(result.kvdata) / 1024.0 / 1024.0 / 1024.0);
-	printf("Ops/s = %0.3lf Kops/s\n", double(total_ops) / 1024.0 / secs);
+	printf("Thread %d: Ops/s = %0.3lf Kops/s\n", tid, double(total_ops) / 1024.0 / secs);
 
 	double throughput = double(result.ycsbdata) / secs;
-	printf("YCSB throughput = %0.6lf MB/s\n", throughput / 1024.0 / 1024.0);
+	printf("Thread %d: YCSB throughput = %0.6lf MB/s\n", tid, throughput / 1024.0 / 1024.0);
 	throughput = double(result.kvdata) / secs;
-	printf("HyperLevelDB throughput = %0.6lf MB/s\n", throughput / 1024.0 / 1024.0);
+	printf("Thread %d: HyperLevelDB throughput = %0.6lf MB/s\n", tid, throughput / 1024.0 / 1024.0);
   }
 
   void print_current_db_contents() {
@@ -703,19 +708,19 @@ class Benchmark {
     Open();
 
     const char* benchmarks = FLAGS_benchmarks;
-    if (benchmarks != NULL && strcmp(benchmarks, "ycsb") == 0) {
-    	if (!FLAGS_use_existing_db) {
-          delete db_;
-          db_ = NULL;
-          DestroyDB(FLAGS_db, Options());
-          Open();
-    	}
-    	print_current_db_contents();
-    	YCSB();
-    	db_->PrintTimerAudit();
-    	print_current_db_contents();
-    	return;
-    }
+//    if (benchmarks != NULL && strcmp(benchmarks, "ycsb") == 0) {
+//    	if (!FLAGS_use_existing_db) {
+//          delete db_;
+//          db_ = NULL;
+//          DestroyDB(FLAGS_db, Options());
+//          Open();
+//    	}
+//    	print_current_db_contents();
+//    	YCSB();
+//    	db_->PrintTimerAudit();
+//    	print_current_db_contents();
+//    	return;
+//    }
 
     while (benchmarks != NULL) {
       const char* sep = strchr(benchmarks, ',');
@@ -739,7 +744,9 @@ class Benchmark {
       bool fresh_db = false;
       int num_threads = FLAGS_threads;
 
-      if (name == Slice("fillseq")) {
+      if (name == Slice("ycsb")) {
+    	  method = &Benchmark::YCSB;
+      } else if (name == Slice("fillseq")) {
 //        fresh_db = true;
         method = &Benchmark::WriteSeq;
       } else if (name == Slice("fillbatch")) {
