@@ -516,6 +516,33 @@ class Benchmark {
   	return result.ycsb_r + result.ycsb_d + result.ycsb_i + result.ycsb_u + result.ycsb_s;
   }
 
+  int split_file_names(const char *file, char file_names[20][100]) {
+	  char delimiter = ',';
+	  int index  = 0;
+	  int cur = 0;
+	  for (int i = 0; i < strlen(file); i++) {
+		  if (file[i] == ',') {
+			  if (cur > 0) {
+				  file_names[index][cur] = '\0';
+				  index++;
+				  cur = 0;
+			  }
+			  continue;
+		  }
+		  if (file[i] == ' ') {
+			  continue;
+		  }
+		  file_names[index][cur] = file[i];
+		  cur++;
+	  }
+	  if (cur > 0) {
+		  file_names[index][cur] = '\0';
+		  cur = 0;
+		  index++;
+	  }
+	  return index;
+  }
+
   void parse_trace(const char *file, int tid) {
   	int ret;
   	char *buf;
@@ -523,6 +550,16 @@ class Benchmark {
   	size_t bufsize = 1000;
   	struct trace_operation_t *curop = NULL;
   	unsigned long long total_ops = 0;
+
+  	char file_names[20][100];
+  	int num_trace_files = split_file_names(file, file_names);
+
+  	const char* corresponding_file;
+  	if (tid >= num_trace_files) {
+  		corresponding_file = file_names[num_trace_files-1]; // Take the last file if number of files is lesser
+  	} else {
+  		corresponding_file = file_names[tid];
+  	}
 
   	printf("Thread %d: Parsing trace ...\n", tid);
   	trace_ops[tid] = (struct trace_operation_t *) mmap(NULL, MAX_TRACE_OPS * sizeof(struct trace_operation_t),
@@ -534,7 +571,7 @@ class Benchmark {
   	buf = (char *) malloc(bufsize);
   	assert (buf != NULL);
 
-  	fp = fopen(file, "r");
+  	fp = fopen(corresponding_file, "r");
   	assert(fp != NULL);
   	curop = trace_ops[tid];
   	while((ret = getline(&buf, &bufsize, fp)) > 0) {
