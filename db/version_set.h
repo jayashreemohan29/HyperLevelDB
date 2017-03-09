@@ -25,7 +25,7 @@
 #include "util/timer.h"
 #include "table/filter_block.h"
 
-#define FILE_LEVEL_FILTER
+//#define FILE_LEVEL_FILTER
 
 namespace leveldb {
 

@@ -468,6 +468,7 @@ Status Version::Get(const ReadOptions& options,
 
       bool key_may_match = true;
 
+#ifdef FILE_LEVEL_FILTER
       std::string* filter_string = vset_->file_level_bloom_filter[f->number];
 //      std::string* filter_string = NULL;
       if (filter_string != NULL) {
@@ -481,9 +482,8 @@ Status Version::Get(const ReadOptions& options,
 			  continue;
 		  }
       }
+#endif
 
-      vstart_timer(GET_FILE_LEVEL_FILTER_CHECK, BEGIN, 1);
-      vrecord_timer(GET_FILE_LEVEL_FILTER_CHECK, BEGIN, 1);
       Saver saver;
       saver.state = kNotFound;
       saver.ucmp = ucmp;
@@ -1123,10 +1123,12 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu, port::CondVar
   }
 
   // Store file level filter strings to map
+#ifdef FILE_LEVEL_FILTER
   assert (file_numbers.size() == file_level_filters.size());
   for (int i = 0; i < file_numbers.size(); i++) {
 	  AddFileLevelBloomFilterInfo(file_numbers[i], file_level_filters[i]);
   }
+#endif
 
   // Install the new version
   if (s.ok()) {
