@@ -262,9 +262,9 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k,
 	    FilterBlockReader* filter = rep_->filter;
 	    BlockHandle handle;
 	    start_timer(GET_TABLE_CACHE_FILTER_CHECK);
-	    if (filter != NULL &&
+	    if (false /*&& filter != NULL &&
 	        handle.DecodeFrom(&handle_value).ok() &&
-	        !filter->KeyMayMatch(handle.offset(), k)) {
+	        !filter->KeyMayMatch(handle.offset(), k)*/) {
 	    	record_timer(GET_TABLE_CACHE_FILTER_CHECK);
 	//    	printf("Key is not present in this block according to BloomFilter. \n");
 	      // Not found
