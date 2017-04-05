@@ -232,6 +232,13 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
   int max_open_files = options_.max_open_files;
   const int table_cache_size = max_open_files - kNumNonTableCacheFiles;
 //  printf("Creating table_cache of size %d\n", table_cache_size);
+  printf("Creating table_cache of size %d\n", table_cache_size);
+//  uint64_t wbs = 0LL;
+//  if (options_ != NULL) {
+//	  wbs = options_.write_buffer_size;
+//  }
+//  printf("Size of memtable: %lld" + wbs);
+
   table_cache_ = new TableCache(dbname_, &options_, table_cache_size);
   timer = new Timer();
   versions_ = new VersionSet(dbname_, &options_, table_cache_,
@@ -247,6 +254,13 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
 
 DBImpl::~DBImpl() {
   // Wait for background work to finish
+
+/*  std::string current_db_state;
+  printf("----------------------Current DB state-----------------------\n");
+  GetCurrentVersionState(&current_db_state);
+  printf("%s\n", current_db_state.c_str());
+  printf("-------------------------------------------------------------\n");
+  */
 
 #ifdef TIMER_LOG
 	PrintTimerAudit();

@@ -956,6 +956,7 @@ void VersionSet::PopulateBloomFilterForFile(FileMetaData* file, FileLevelFilterB
 //	printf("VersionSet :: Populating Bloom filter for file %llu \n", file->number);
 	uint64_t file_number = file->number;
 	uint64_t file_size = file->file_size;
+	int cnt = 0;
 
 	if (file_level_bloom_filter[file_number] != NULL) {
 		// This means that we have already calculated the bloom filter for this file and files are immutable (wrt a file number)
@@ -968,6 +969,7 @@ void VersionSet::PopulateBloomFilterForFile(FileMetaData* file, FileLevelFilterB
 //    std::vector<Slice> keys;
     int index = 0;
     while (iter->Valid()) {
+    	cnt++;
 //    	num_entries++;
     	file_level_filter_builder->AddKey(iter->key());
 //    	filter_key_strings[index].assign(iter->key().ToString());
@@ -976,12 +978,15 @@ void VersionSet::PopulateBloomFilterForFile(FileMetaData* file, FileLevelFilterB
 //    	keys.push_back(iter->key());
     	iter->Next();
     }
-    std::string* filter_string = file_level_filter_builder->GenerateFilter();
-    assert (filter_string != NULL);
+    if (cnt > 0) {
+		std::string* filter_string = file_level_filter_builder->GenerateFilter();
+		assert (filter_string != NULL);
+
+		AddFileLevelBloomFilterInfo(file_number, filter_string);
+    }
 //    filter_policy->CreateFilter(filter_keys, index, filter_string);
 //    printf("DEBUG :: (Initialize) Creating new string of size %llu for filter_string for file %llu\n", filter_string->length(), file_number);
     delete iter;
-    AddFileLevelBloomFilterInfo(file_number, filter_string);
 
 //    file_level_bloom_filter[file_number].assign(filter_string);
 }
