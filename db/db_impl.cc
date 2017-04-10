@@ -48,6 +48,14 @@
 	#define record_timer(s)
 #endif
 
+#ifdef TIMER_LOG_SIMPLE
+	#define start_timer_simple(s) timer->StartTimer(s)
+	#define record_timer_simple(s) timer->Record(s)
+#else
+	#define start_timer_simple(s)
+	#define record_timer_simple(s)
+#endif
+
 namespace leveldb {
 
 const unsigned kStraightReads = 10;
@@ -255,14 +263,23 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
 DBImpl::~DBImpl() {
   // Wait for background work to finish
 
-/*  std::string current_db_state;
+  std::string current_db_state;
   printf("----------------------Current DB state-----------------------\n");
   GetCurrentVersionState(&current_db_state);
   printf("%s\n", current_db_state.c_str());
   printf("-------------------------------------------------------------\n");
-  */
 
-#ifdef TIMER_LOG
+  // Print DB stats
+  std::string stats;
+  std::string key = "leveldb.stats";
+  if (!GetProperty(key.c_str(), &stats)) {
+    stats = "(failed)";
+  }
+  printf("------------------ DB Stats --------------\n");
+  printf("%s\n", stats.c_str());
+  printf("------------------------------------------\n");
+
+  #ifdef TIMER_LOG
 	PrintTimerAudit();
 #endif
 
@@ -689,6 +706,7 @@ void DBImpl::CompactMemTableThread() {
       break;
     }
 
+    start_timer_simple(TOTAL_MEMTABLE_COMPACTION);
     start_timer(TOTAL_MEMTABLE_COMPACTION);
     // Save the contents of the memtable as a new Table
     VersionEdit edit;
@@ -753,6 +771,7 @@ void DBImpl::CompactMemTableThread() {
 
     assert(config::kL0_SlowdownWritesTrigger > 0);
     record_timer(TOTAL_MEMTABLE_COMPACTION);
+    record_timer_simple(TOTAL_MEMTABLE_COMPACTION);
   }
   Log(options_.info_log, "cleaning up CompactMemTableThread");
   num_bg_threads_ -= 1;
@@ -847,9 +866,11 @@ void DBImpl::CompactLevelThread() {
     }
 
     assert(manual_compaction_ == NULL || num_bg_threads_ == 2);
+    start_timer_simple(TOTAL_BACKGROUND_COMPACTION);
     start_timer(TOTAL_BACKGROUND_COMPACTION);
     Status s = BackgroundCompaction(&file_level_filter_builder);
     record_timer(TOTAL_BACKGROUND_COMPACTION);
+    record_timer_simple(TOTAL_BACKGROUND_COMPACTION);
     bg_fg_cv_.SignalAll(); // before the backoff In case a waiter
                            // can proceed despite the error
 
@@ -1393,6 +1414,7 @@ Status DBImpl::Get(const ReadOptions& options,
                    const Slice& key,
                    std::string* value) {
 	  Status s;
+	  start_timer_simple(GET_OVERALL_TIME);
 	  start_timer(GET_OVERALL_TIME);
 	  start_timer(GET_TIME_TO_GET_MUTEX);
 	  MutexLock l(&mutex_);
@@ -1454,6 +1476,7 @@ Status DBImpl::Get(const ReadOptions& options,
 	  current->Unref();
 	  record_timer(GET_TIME_TO_FINISH_UNREF);
 	  record_timer(GET_OVERALL_TIME);
+	  record_timer_simple(GET_OVERALL_TIME);
 	  return s;
 }
 
@@ -1664,6 +1687,7 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
   Writer w(&writers_mutex_);
   Status s;
 
+  start_timer_simple(WRITE_OVERALL_TIME);
   start_timer(WRITE_OVERALL_TIME);
   start_timer(WRITE_SEQUENCE_WRITE_BEGIN_TOTAL);
   s = SequenceWriteBegin(&w, updates);
@@ -1704,6 +1728,7 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
   SequenceWriteEnd(&w);
   record_timer(WRITE_SEQUENCE_WRITE_END_TOTAL);
   record_timer(WRITE_OVERALL_TIME);
+  record_timer_simple(WRITE_OVERALL_TIME);
 
   return s;
 }
