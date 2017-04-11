@@ -283,6 +283,10 @@ DBImpl::~DBImpl() {
 	PrintTimerAudit();
 #endif
 
+#ifdef TIMER_LOG_SIMPLE
+	PrintTimerAudit();
+#endif
+
   mutex_.Lock();
   shutting_down_.Release_Store(this);  // Any non-NULL value is ok
   bg_compaction_cv_.SignalAll();
