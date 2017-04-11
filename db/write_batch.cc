@@ -42,6 +42,10 @@ void WriteBatch::Clear() {
   rep_.resize(kHeader);
 }
 
+int WriteBatch::Count() const {
+  return WriteBatchInternal::Count(this);
+}
+
 Status WriteBatch::Iterate(Handler* handler) const {
   Slice input(rep_);
   if (input.size() < kHeader) {

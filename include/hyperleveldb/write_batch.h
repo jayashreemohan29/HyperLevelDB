@@ -42,6 +42,8 @@ class WriteBatch {
   // Clear all updates buffered in this batch.
   void Clear();
 
+  int Count() const;
+
   // Support for iterating over the contents of a batch.
   class Handler {
    public:
