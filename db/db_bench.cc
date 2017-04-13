@@ -115,6 +115,9 @@ static int FLAGS_cache_size = -1;
 // Maximum number of files to keep open at the same time (use default if == 0)
 static int FLAGS_open_files = 0;
 
+// Number of next operations to do in a ScanRandom workload
+static int FLAGS_num_next = 1;
+
 // Bloom filter bits per key.
 // Negative means use default settings.
 static int FLAGS_bloom_bits = 10;
@@ -1272,8 +1275,9 @@ class Benchmark {
 //	      micros(e);
 //	      printf("SeekRandom:: Seek complete for value %d-th value: %lu (with map addition - %lu)\n", i, d-c, e-c);
 //	      printf("Seeking for key %s\n", key);
+	      int num_next = FLAGS_num_next;
 	      if (iter->Valid() && iter->key() == key) {
-	    	  for (int j = 0; j < next_sizes[index] && iter->Valid(); j++) {
+	    	  for (int j = 0; j < num_next && iter->Valid(); j++) {
 	    		  iter->Next();
 	    	  }
 	    	  found++;
@@ -1467,6 +1471,8 @@ int main(int argc, char** argv) {
       FLAGS_bloom_bits = n;
     } else if (sscanf(argv[i], "--open_files=%d%c", &n, &junk) == 1) {
       FLAGS_open_files = n;
+    } else if (sscanf(argv[i], "--num_next=%d%c", &n, &junk) == 1) {
+      FLAGS_num_next = n;
     } else if (strncmp(argv[i], "--db=", 5) == 0) {
       FLAGS_db = argv[i] + 5;
     } else {
