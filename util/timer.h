@@ -14,7 +14,7 @@
 
 //#define TIMER_LOG
 //#define TIMER_LOG_SEEK
-#define TIMER_LOG_SIMPLE
+//#define TIMER_LOG_SIMPLE
 
 namespace leveldb {
 

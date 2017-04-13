@@ -977,7 +977,7 @@ Status DBImpl::BackgroundCompaction(FileLevelFilterBuilder* file_level_filter_bu
           status.ToString().c_str(),
           versions_->LevelSummary(&tmp));
     }
-    printf("BGC: Compacting level %d to level %d: Trivial move of %d files of size %llu\n", c->level(), c->level() + 1, c->num_input_files(0), read_size);
+//    printf("BGC: Compacting level %d to level %d: Trivial move of %d files of size %llu\n", c->level(), c->level() + 1, c->num_input_files(0), read_size);
   } else {
     CompactionState* compact = new CompactionState(c);
 
@@ -1343,10 +1343,10 @@ Status DBImpl::DoCompactionWork(CompactionState* compact, FileLevelFilterBuilder
   }
   total_output_files = compact->outputs.size();
 
-  printf("BGC: DoCompaction summary: Compacting level %d to level %d: current_level_files: %d, next_level_files: %d, total_input_files: %d,"
-		  " current_level_size: %llu, next_level_size: %llu, total_input_size: %llu, output_files: %d output_data_size: %llu\n",
-		  compact->compaction->level(), compact->compaction->level() + 1, current_level_input_files, next_level_input_files, total_input_files,
-		  current_level_input_data_size, next_level_input_data_size, total_input_data_size, total_output_files, total_output_data_size);
+//  printf("BGC: DoCompaction summary: Compacting level %d to level %d: current_level_files: %d, next_level_files: %d, total_input_files: %d,"
+//		  " current_level_size: %llu, next_level_size: %llu, total_input_size: %llu, output_files: %d output_data_size: %llu\n",
+//		  compact->compaction->level(), compact->compaction->level() + 1, current_level_input_files, next_level_input_files, total_input_files,
+//		  current_level_input_data_size, next_level_input_data_size, total_input_data_size, total_output_files, total_output_data_size);
   record_timer(BGC_COLLECT_STATS);
 
   start_timer(BGC_GET_LOCK_BEFORE_INSTALL);
