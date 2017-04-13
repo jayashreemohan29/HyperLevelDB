@@ -819,6 +819,8 @@ class Benchmark {
         method = &Benchmark::ReadMissing;
       } else if (name == Slice("seekrandom")) {
         method = &Benchmark::SeekRandom;
+      } else if (name == Slice("scanrandom")) {
+        method = &Benchmark::ScanRandom;
       } else if (name == Slice("readhot")) {
         method = &Benchmark::ReadHot;
       } else if (name == Slice("readrandomsmall")) {
@@ -1243,6 +1245,59 @@ class Benchmark {
     thread->stats.AddMessage(msg);
   }
 
+
+  void ScanRandom(ThreadState* thread) {
+	    printf("ScanRandom called. \n");
+	    std::vector<int> next_sizes = {20, 40, 60, 80, 100};
+	    int index = 0;
+		uint64_t a, b, c, d, e;
+	    ReadOptions options;
+	    std::string value;
+	    int found = 0;
+	    micros(a);
+	    std::map<int, int> micros_count;
+	    for (int i = 0; i < reads_; i++) {
+//	      printf("Creating NewIterator..\n");
+	      Iterator* iter = db_->NewIterator(options);
+//	      printf("NewIterator created. \n");
+	      char key[100];
+	      const int k = thread->rand.Next() % FLAGS_num;
+	      snprintf(key, sizeof(key), "%016d", k);
+//	      printf("----------------------------------------------\n");
+//	      printf("Iteration %d: Seeking for key %s\n", i, key);
+//	      micros(c);
+	      iter->Seek(key);
+//	      micros(d);
+//	      micros_count[(d-c)/1000]++;
+//	      micros(e);
+//	      printf("SeekRandom:: Seek complete for value %d-th value: %lu (with map addition - %lu)\n", i, d-c, e-c);
+//	      printf("Seeking for key %s\n", key);
+	      if (iter->Valid() && iter->key() == key) {
+	    	  for (int j = 0; j < next_sizes[index] && iter->Valid(); j++) {
+	    		  iter->Next();
+	    	  }
+	    	  found++;
+	      }/* else {
+	    	  if (iter->Valid()) {
+	    		  printf("Key %s -- iter pointing to %s !\n", key, iter->key().data());
+	    	  } else {
+	    		  printf("Key %s -- iter not valid !\n", key);
+	    	  }
+	      }*/
+	      delete iter;
+	      thread->stats.FinishedSingleOp();
+	      index = (index + 1) % next_sizes.size();
+	    }
+//		for (std::map<int, int>::iterator it = micros_count.begin(); it != micros_count.end(); it++) {
+//			printf("micros_count[%d] = %d\n", it->first, it->second);
+//		}
+	    char msg[100];
+	    snprintf(msg, sizeof(msg), "(%d of %d found)", found, reads_);
+	    micros(b);
+	    print_timer_info("ScanRandom:: Total time taken to seek N random values", a, b);
+//	    print_current_db_contents();
+	    thread->stats.AddMessage(msg);
+  }
 
   void DoDelete(ThreadState* thread, bool seq) {
     RandomGenerator gen;
