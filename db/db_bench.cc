@@ -600,7 +600,7 @@ class Benchmark {
 
   char valuebuf[MAX_VALUE_SIZE];
 
-  void perform_op(DB *db, struct trace_operation_t *op, int tid) {
+  Status perform_op(DB *db, struct trace_operation_t *op, int tid) {
   	char keybuf[100];
   	int keylen;
   	Status status;
@@ -614,7 +614,7 @@ class Benchmark {
   	if (op->cmd == 'r') {
   		std::string value;
   		status = db->Get(roptions, key, &value);
-  		sassert(status.ok());
+//  		sassert(status.ok());
   		result.ycsbdata += keylen + value.length();
   		result.kvdata += keylen + value.length();
   		//assert(value.length() == 1080);
@@ -673,6 +673,7 @@ class Benchmark {
   	} else {
   		assert(false);
   	}
+  	return status;
   }
 
   #define envinput(var, type) {assert(getenv(#var)); int ret = sscanf(getenv(#var), type, &var); assert(ret == 1);}
@@ -701,8 +702,12 @@ class Benchmark {
 	gettimeofday(&start, NULL);
 	fprintf(stderr, "\nCompleted 0 ops");
 	fflush(stderr);
+	uint64_t succeeded = 0;
 	while(curop->cmd) {
-		perform_op(db_, curop, tid);
+		Status status = perform_op(db_, curop, tid);
+		if (status.ok()) {
+			succeeded++;
+		}
 		thread->stats.FinishedSingleOp();
 		curop++;
 		total_ops++;
@@ -719,6 +724,7 @@ class Benchmark {
 	printf("\n\nThread %d: Done replaying %llu operations.\n", tid, total_ops);
 	unsigned long long splitup_ops = print_splitup(tid);
 	assert(splitup_ops == total_ops);
+	printf("Thread %d: %lu of %lu operations succeeded.\n", succeeded, total_ops);
 	printf("Thread %d: Time taken = %0.3lf seconds\n", tid, secs);
 	printf("Thread %d: Total data: YCSB = %0.6lf GB, HyperLevelDB = %0.6lf GB\n", tid,
 			double(result.ycsbdata) / 1024.0 / 1024.0 / 1024.0,
