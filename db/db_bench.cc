@@ -724,7 +724,7 @@ class Benchmark {
 	printf("\n\nThread %d: Done replaying %llu operations.\n", tid, total_ops);
 	unsigned long long splitup_ops = print_splitup(tid);
 	assert(splitup_ops == total_ops);
-	printf("Thread %d: %lu of %lu operations succeeded.\n", succeeded, total_ops);
+	printf("Thread %d: %lu of %llu operations succeeded.\n", tid, succeeded, total_ops);
 	printf("Thread %d: Time taken = %0.3lf seconds\n", tid, secs);
 	printf("Thread %d: Total data: YCSB = %0.6lf GB, HyperLevelDB = %0.6lf GB\n", tid,
 			double(result.ycsbdata) / 1024.0 / 1024.0 / 1024.0,
