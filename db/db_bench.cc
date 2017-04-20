@@ -118,6 +118,9 @@ static int FLAGS_open_files = 0;
 // Number of next operations to do in a ScanRandom workload
 static int FLAGS_num_next = 1;
 
+// Base key which gets added to the randodm key generated
+static int FLAGS_base_key = 0;
+
 // Bloom filter bits per key.
 // Negative means use default settings.
 static int FLAGS_bloom_bits = 10;
@@ -1113,7 +1116,7 @@ class Benchmark {
     for (int i = 0; i < num_; i += entries_per_batch_) {
       batch.Clear();
       for (int j = 0; j < entries_per_batch_; j++) {
-        const int k = seq ? i+j : (thread->rand.Next() % FLAGS_num);
+        const int k = seq ? i+j + FLAGS_base_key : (thread->rand.Next() % FLAGS_num) + FLAGS_base_key;
         char key[100];
         snprintf(key, sizeof(key), "%016d", k);
         batch.Put(key, gen.Generate(value_size_));
@@ -1176,7 +1179,7 @@ class Benchmark {
     micros(start);
     for (int i = 0; i < reads_; i++) {
       char key[100];
-      const int k = thread->rand.Next() % FLAGS_num;
+      const int k = thread->rand.Next() % FLAGS_num + FLAGS_base_key;
       snprintf(key, sizeof(key), "%016d", k);
       if (db_->Get(options, key, &value).ok()) {
         found++;
@@ -1316,7 +1319,7 @@ class Benchmark {
     for (int i = 0; i < num_; i += entries_per_batch_) {
       batch.Clear();
       for (int j = 0; j < entries_per_batch_; j++) {
-        const int k = seq ? i+j : (thread->rand.Next() % FLAGS_num);
+        const int k = seq ? i+j + FLAGS_base_key : (thread->rand.Next() % FLAGS_num) + FLAGS_base_key;
         char key[100];
         snprintf(key, sizeof(key), "%016d", k);
         batch.Delete(key);
@@ -1479,6 +1482,8 @@ int main(int argc, char** argv) {
       FLAGS_open_files = n;
     } else if (sscanf(argv[i], "--num_next=%d%c", &n, &junk) == 1) {
       FLAGS_num_next = n;
+    } else if (sscanf(argv[i], "--base_key=%d%c", &n, &junk) == 1) {
+      FLAGS_base_key = n;
     } else if (strncmp(argv[i], "--db=", 5) == 0) {
       FLAGS_db = argv[i] + 5;
     } else {
