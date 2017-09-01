@@ -130,9 +130,18 @@ class MergingIterator : public Iterator {
       ReinitializeComparisons();
     }
 
+    start_timer(SEEK_NEXT_POP);
     PopCurrentComparison();
+    record_timer(SEEK_NEXT_POP);
+
+    start_timer(SEEK_NEXT_CURRENT_NEXT);
     current_->Next();
+    record_timer(SEEK_NEXT_CURRENT_NEXT);
+
+    start_timer(SEEK_NEXT_PUSH);
     PushCurrentComparison();
+    record_timer(SEEK_NEXT_PUSH);
+
     FindSmallest();
 	record_timer(SEEK_NEXT);
   }
