@@ -291,7 +291,7 @@ public:
 		message[SEEK_REINIT] = "SEEK_REINIT";
 		message[SEEK_NEXT] = "SEEK_NEXT";
 		message[SEEK_NEXT_POP] = "SEEK_NEXT_POP";
-		message[SEEK_NEXT_POP] = "SEEK_NEXT_PUSH";
+		message[SEEK_NEXT_PUSH] = "SEEK_NEXT_PUSH";
 		message[SEEK_NEXT_CURRENT_NEXT] = "SEEK_NEXT_CURRENT_NEXT";
 		clear();
 	}
