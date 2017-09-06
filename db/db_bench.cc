@@ -1263,6 +1263,7 @@ class Benchmark {
 	    std::vector<int> next_sizes = {20, 40, 60, 80, 100};
 	    int index = 0;
 		uint64_t a, b, c, d, e;
+		uint64_t seek_start, seek_end, seek_total = 0, scan_start, scan_end, scan_total = 0;
 	    ReadOptions options;
 	    std::string value;
 	    int found = 0;
@@ -1278,19 +1279,28 @@ class Benchmark {
 //	      printf("----------------------------------------------\n");
 //	      printf("Iteration %d: Seeking for key %s\n", i, key);
 //	      micros(c);
+	      seek_start = Env::Default()->NowMicros();
 	      iter->Seek(key);
+	      seek_end = Env::Default()->NowMicros();
+	      seek_total += seek_end - seek_start;
 //	      micros(d);
 //	      micros_count[(d-c)/1000]++;
 //	      micros(e);
 //	      printf("SeekRandom:: Seek complete for value %d-th value: %lu (with map addition - %lu)\n", i, d-c, e-c);
 //	      printf("Seeking for key %s\n", key);
+	      scan_start = Env::Default()->NowMicros();
 	      int num_next = FLAGS_num_next;
-	      if (iter->Valid() && iter->key() == key) {
+	      if (iter->Valid()) {
+	    	  if (iter->key() == key) {
+	    		  found++;
+	    	  }
 	    	  for (int j = 0; j < num_next && iter->Valid(); j++) {
 	    		  iter->Next();
 	    	  }
-	    	  found++;
-	      }/* else {
+	      }
+	      scan_end = Env::Default()->NowMicros();
+	      scan_total += scan_end - scan_start;
+	      /* else {
 	    	  if (iter->Valid()) {
 	    		  printf("Key %s -- iter pointing to %s !\n", key, iter->key().data());
 	    	  } else {
@@ -1307,6 +1317,8 @@ class Benchmark {
 	    char msg[100];
 	    snprintf(msg, sizeof(msg), "(%d of %d found)", found, reads_);
 	    micros(b);
+	    printf("ScanRandom:: Time taken to seek N random values: %lu micros (%f ms)\n", seek_total, seek_total/1000.0);
+	    printf("ScanRandom:: Time taken to scan num_next random values: %lu micros (%f ms)\n", scan_total, scan_total/1000.0);
 	    print_timer_info("ScanRandom:: Total time taken to seek N random values", a, b);
 //	    print_current_db_contents();
 	    thread->stats.AddMessage(msg);
