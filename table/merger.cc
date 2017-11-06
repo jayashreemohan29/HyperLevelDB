@@ -270,6 +270,9 @@ void MergingIterator::FindSmallest() {
   assert(direction_ == kForward);
   if (heap_sz_ > 0) {
     current_ = &children_[heap_[0]];
+    printf("\nHeap min = %d\n", heap_[0]);
+    if(current_->Valid())
+	printf("\nKey pointed by iter = %s\n",current_->key().ToString().c_str());
   } else {
     current_ = NULL;
   }

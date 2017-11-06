@@ -20,7 +20,6 @@
 #include "db/version_set.h"
 #include "hyperleveldb/cache.h"
 #include "hyperleveldb/db.h"
-#include "hyperleveldb/env.h"
 #include "hyperleveldb/write_batch.h"
 #include "port/port.h"
 #include "util/crc32c.h"
@@ -1276,8 +1275,8 @@ class Benchmark {
 	      char key[100];
 	      const int k = thread->rand.Next() % FLAGS_num;
 	      snprintf(key, sizeof(key), "%016d", k);
-//	      printf("----------------------------------------------\n");
-//	      printf("Iteration %d: Seeking for key %s\n", i, key);
+	      printf("----------------------------------------------\n");
+	      printf("Iteration %d: Seeking for key %s and range = %d\n", i, key, FLAGS_num_next);
 //	      micros(c);
 	      seek_start = Env::Default()->NowMicros();
 	      iter->Seek(key);
@@ -1293,9 +1292,11 @@ class Benchmark {
 	      if (iter->Valid()) {
 	    	  if (iter->key() == key) {
 	    		  found++;
+			  printf("Key : %s\n", iter->key().ToString().c_str());
 	    	  }
 	    	  for (int j = 0; j < num_next && iter->Valid(); j++) {
 	    		  iter->Next();
+			  printf("Key : %s\n", iter->key().ToString().c_str());
 	    	  }
 	      }
 	      scan_end = Env::Default()->NowMicros();
